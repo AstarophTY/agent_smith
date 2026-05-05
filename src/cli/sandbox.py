@@ -1,6 +1,7 @@
 import typer
 from typing import Optional
 
+
 app = typer.Typer()
 
 
@@ -21,7 +22,7 @@ def main(
             "--mcp-server",
             help="URL for MCP server"
         )
-):
+) -> None:
     """
     Sandbox CLI dispatcher for tools A, B, C, D, and E.
     TODO: Implement everything and replace the ABCDE prints
