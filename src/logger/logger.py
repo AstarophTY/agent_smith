@@ -3,7 +3,7 @@ from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
 from os import getenv
-from sys import stdout
+import sys
 import logging
 import json
 
@@ -20,26 +20,27 @@ class Logger:
 
         load_dotenv()
         log_level = getenv("LOG_LEVEL", "INFO").upper()
-
-
         cls._base_path.mkdir(exist_ok=True)
-
         cls._logger = logging.getLogger("agent-smith")
         cls._logger.setLevel(log_level)
 
-        cls._handler = logging.StreamHandler(stdout)
-        cls._handler.setLevel(logging.INFO)
-
-        cls._error_handler = logging.StreamHandler()
-        cls._error_handler.setLevel(logging.WARNING)
-
         formatter = logging.Formatter(
-            "%(asctime)s [%(levelname)s] - %(message)s",
+            "%(asctime)s [%(levelname)s] %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S"
         )
+
+        cls._handler = logging.StreamHandler(sys.stdout)
+        cls._handler.setLevel(log_level)
         cls._handler.setFormatter(formatter)
+        cls._handler.addFilter(lambda r: r.levelno == logging.INFO)
+
+        cls._error_handler = logging.StreamHandler(sys.stderr)
+        cls._error_handler.setLevel(log_level)
+        cls._error_handler.addFilter(lambda r: r.levelno != logging.INFO)
+        cls._error_handler.setFormatter(formatter)
 
         cls._logger.addHandler(cls._handler)
+        cls._logger.addHandler(cls._error_handler)
         cls._initialized = True
 
     @classmethod
@@ -133,6 +134,8 @@ class Logger:
 
 
 if __name__ == "__main__":
+    # print("Salut tout le monde")
     Logger.info("Salut tout le monde !")
     Logger.error("Salut tout le monde !")
+    Logger.debug("Salut tout le monde !")
     # Logger.save_task_result("TESt", "TEs", {"Test": 4}, {"5": "test"}, "Salut", "dwdw")
