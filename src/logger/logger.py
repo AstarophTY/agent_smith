@@ -27,19 +27,20 @@ class Logger:
         cls._logger = logging.getLogger("agent-smith")
         cls._logger.setLevel(log_level)
 
-        cls._handler = logging.StreamHandler(stdout)
+        cls._handler = logging.StreamHandler()
         cls._handler.setLevel(logging.INFO)
 
         cls._error_handler = logging.StreamHandler()
-        cls._error_handler.setLevel(logging.WARNING)
+        cls._error_handler.setLevel(logging.ERROR)
 
         formatter = logging.Formatter(
-            "%(asctime)s [%(levelname)s] - %(message)s",
+            "%(asctime)s [%(levelname)s] %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S"
         )
         cls._handler.setFormatter(formatter)
 
         cls._logger.addHandler(cls._handler)
+        cls._logger.addHandler(cls._error_handler)
         cls._initialized = True
 
     @classmethod
