@@ -1,3 +1,2 @@
-2026-05-05 23:53:24 [INFO] Salut tout le monde !
-2026-05-05 23:53:24 [ERROR] Salut tout le monde !
-Salut tout le monde !
+2026-05-06 00:17:37 [ERROR] Salut tout le monde !
+2026-05-06 00:17:37 [DEBUG] Salut tout le monde !
