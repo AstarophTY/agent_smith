@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Literal, Optional
 
 import typer
 
@@ -30,6 +30,11 @@ def main(
         "--http-path",
         help="HTTP path for streamable MCP endpoint.",
     ),
+    tools_module: Optional[str] = typer.Option(
+        None,
+        "--tools-module",
+        help="Path to Python file containing tools to register.",
+    ),
 ) -> None:
     """
     Run MCP server in STDIO or HTTP mode.
@@ -39,4 +44,4 @@ def main(
         protocol = "streamable-http"
     else:
         protocol = "stdio"
-    run_server(transport=protocol, host=host, port=port, http_path=http_path)
+    run_server(transport=protocol, host=host, port=port, http_path=http_path, tools_module=tools_module)
