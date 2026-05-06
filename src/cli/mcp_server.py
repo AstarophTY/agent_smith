@@ -2,7 +2,7 @@ from typing import Literal
 
 import typer
 
-from mcp_sys.server import run_server
+from ..mcp_sys.server import run_server
 
 
 app = typer.Typer()
