@@ -1,5 +1,4 @@
 from typing import Literal
-
 from fastmcp import FastMCP
 
 
@@ -14,12 +13,6 @@ class MCPServer:
         self.port = port
         self.http_path = http_path
         self.server = FastMCP("agent-smith-tools")
-        self.server.tool()(self.print_message)
-
-    @staticmethod
-    def print_message(message: str) -> str:
-        """Print a message to the terminal."""
-        return message
 
     def run(self, transport: Literal["stdio", "streamable-http"]) -> None:
         if transport == "streamable-http":
