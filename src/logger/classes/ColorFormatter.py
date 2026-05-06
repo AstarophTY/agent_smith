@@ -1,7 +1,7 @@
 import logging
 import copy
 
-from ...constant import COLORS, RESET
+from ..constant import COLORS, RESET
 
 
 class ColorFormatter(logging.Formatter):
