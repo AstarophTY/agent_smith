@@ -1,0 +1,2 @@
+class AlreadyInitializedError(BaseException):
+    pass
