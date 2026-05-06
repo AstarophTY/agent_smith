@@ -8,4 +8,17 @@ dependencies = [
     "dotenv>=0.9.9",
     "flake8>=7.3.0",
     "mypy>=1.20.2",
+    "typer>=0.25.1",
 ]
+
+[project.scripts]
+sandbox = "cli.sandbox:app"
+agent_mbpp = "cli.agent_mbpp:app"
+agent_swebench = "cli.agent_swebench:app"
+
+[build-system]
+requires = ["setuptools>=68.0", "setuptools-scm>=8.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
