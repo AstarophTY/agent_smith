@@ -72,7 +72,11 @@ def _parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
 class LocalToolsClient:
     """Local MCP-like client that dispatches to functions in a tools module."""
 
-    def __init__(self, module: ModuleType, containerizer: Optional[Containerizer] = None) -> None:
+    def __init__(
+        self,
+        module: ModuleType,
+        containerizer: Optional[Containerizer] = None
+    ) -> None:
         self._tools: Dict[str, Callable[..., Any]] = {}
         self._schemas: list[dict[str, Any]] = []
         self.containerizer = containerizer
@@ -86,7 +90,7 @@ class LocalToolsClient:
             if isinstance(attr, type):
                 try:
                     # Inject containerizer if the class accepts it
-                    sig = inspect.signature(attr.__init__)
+                    sig = inspect.signature(attr)
                     if "containerizer" in sig.parameters:
                         instance = attr(containerizer=self.containerizer)
                     else:

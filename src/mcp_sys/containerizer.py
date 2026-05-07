@@ -1,5 +1,6 @@
 import docker
 from typing import Any
+from docker.models.containers import Container
 from docker.errors import APIError
 
 from logger.classes.Logger import Logger
@@ -28,7 +29,7 @@ class Containerizer:
                 Defaults to "python:3.10-slim".
         """
         self.client = docker.from_env()
-        self.container = None
+        self.container: Container | None = None
 
     def up(self, image: str = "python:3.10-slim") -> None:
         """Starts a new Docker container.
@@ -51,10 +52,11 @@ class Containerizer:
             command="/bin/bash",
             tty=True,
             detach=True
-        )
-        Logger.debug(
-            f"Container {self.container.short_id} started successfully."
-        )
+        ) or None
+        if self.container is not None:
+            Logger.debug(
+                f"Container {self.container.short_id} started successfully."
+            )
 
     def down(self) -> None:
         """
@@ -87,7 +89,8 @@ class Containerizer:
             command (str): The shell command to execute inside the container.
 
         Returns:
-            dict[str, Any]: A dictionary containing 'stdout', 'stderr' and 'exit_code'.
+            dict[str, Any]: A dictionary containing 'stdout', 'stderr' and
+                'exit_code'.
 
         Raises:
             RuntimeError: If no container is currently running.
@@ -99,20 +102,23 @@ class Containerizer:
 
         # Wrap the command in a shell to support redirects (>), pipes (|), etc.
         # demux=True separates the stdout and stderr streams.
-        exit_code, output = self.container.exec_run(
+        exec_result = self.container.exec_run(
             cmd=["/bin/bash", "-c", command],
             demux=True,
         )
 
-        if output is None:
-            stdout_bytes, stderr_bytes = None, None
-        else:
-            stdout_bytes, stderr_bytes = output
+        exit_code = exec_result.exit_code or 0
+        output = exec_result.output
 
-        # Decode bytes to string. If a stream is empty, Docker SDK returns None
-        # so we fallback to an empty string.
-        stdout_str = stdout_bytes.decode("utf-8") if stdout_bytes else ""
-        stderr_str = stderr_bytes.decode("utf-8") if stderr_bytes else ""
+        stdout_str = ""
+        stderr_str = ""
+
+        if isinstance(output, tuple):
+            stdout_bytes, stderr_bytes = output
+            if stdout_bytes:
+                stdout_str = stdout_bytes.decode("utf-8")
+            if stderr_bytes:
+                stderr_str = stderr_bytes.decode("utf-8")
 
         return {
             "stdout": stdout_str,
