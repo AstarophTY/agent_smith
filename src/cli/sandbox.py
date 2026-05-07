@@ -1,17 +1,20 @@
-import typer
+import argparse
+import importlib.util
+import inspect
 import subprocess
-from typing import Optional
+import sys
+from types import ModuleType
+from typing import Any, Callable, Dict, Optional
 from urllib.parse import urlparse
 
-
-app = typer.Typer()
+from sandbox import Sandbox, SandboxSession, load_config
 
 
 def launch_mcp_server_subprocess(
     tools_module: str,
     transport: str = "stdio",
     host: str = "127.0.0.1",
-    port: int = 8000
+    port: int = 8000,
 ) -> subprocess.Popen:
     """Launch mcp_server as a subprocess with the given tools module."""
     cmd = [
@@ -37,66 +40,161 @@ def run_mcp_server_stdio(tools_module: str) -> None:
     subprocess.run(cmd, check=False)
 
 
-@app.callback(invoke_without_command=True)
-def main(
-        ctx: typer.Context,
-        template: Optional[str] = typer.Argument(
-            None,
-            help="Path to the configuration template"
-        ),
-        mcp_stdio: Optional[str] = typer.Option(
-            None,
-            "--mcp-stdio",
-            help="Command for MCP stdio tools"
-        ),
-        mcp_server: Optional[str] = typer.Option(
-            None,
-            "--mcp-server",
-            help="URL for MCP server"
-        )
-) -> None:
-    """
-    Sandbox CLI dispatcher for tools A, B, C, D, and E.
-    """
-    if ctx.invoked_subcommand is not None:
+def _parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Secure sandbox CLI")
+    parser.add_argument("config", nargs="?", help="Path to sandbox config JSON")
+    parser.add_argument(
+        "--mcp-stdio",
+        dest="mcp_stdio",
+        help="Command for MCP stdio tools (e.g., 'python mcp_tools_mbpp.py')",
+    )
+    parser.add_argument(
+        "--mcp-server",
+        dest="mcp_server",
+        help="URL for MCP server (HTTP transport)",
+    )
+    return parser.parse_args(argv)
+
+
+class LocalToolsClient:
+    """Local MCP-like client that dispatches to functions in a tools module."""
+
+    def __init__(self, module: ModuleType) -> None:
+        self._tools: Dict[str, Callable[..., Any]] = {}
+        self._schemas: list[dict[str, Any]] = []
+        self._load_tools(module)
+
+    def _load_tools(self, module: ModuleType) -> None:
+        for attr_name in dir(module):
+            if attr_name.startswith("_"):
+                continue
+            attr = getattr(module, attr_name)
+            if isinstance(attr, type):
+                try:
+                    instance = attr()
+                except Exception:
+                    instance = attr
+                self._register_instance(instance)
+            elif callable(attr):
+                self._register_tool(attr)
+
+    def _register_instance(self, instance: Any) -> None:
+        for method_name in dir(instance):
+            if method_name.startswith("_"):
+                continue
+            method = getattr(instance, method_name)
+            if callable(method):
+                self._register_tool(method, name_override=method_name)
+
+    def _register_tool(self, func: Callable[..., Any], name_override: Optional[str] = None) -> None:
+        name = name_override or getattr(func, "__name__", "tool")
+        self._tools[name] = func
+        self._schemas.append(self._build_schema(name, func))
+
+    def _build_schema(self, name: str, func: Callable[..., Any]) -> dict[str, Any]:
+        signature = inspect.signature(func)
+        properties: Dict[str, Any] = {}
+        for param in signature.parameters.values():
+            if param.name == "self":
+                continue
+            properties[param.name] = {"type": "string"}
+        description = (func.__doc__ or "").strip().splitlines()[0] if func.__doc__ else ""
+        return {
+            "name": name,
+            "description": description,
+            "inputSchema": {"type": "object", "properties": properties},
+        }
+
+    def list_tools(self) -> list[dict[str, Any]]:
+        return list(self._schemas)
+
+    def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
+        if name not in self._tools:
+            raise RuntimeError(f"Unknown tool: {name}")
+        return self._tools[name](**arguments)
+
+
+def _load_tools_module(path: str) -> ModuleType:
+    spec = importlib.util.spec_from_file_location("tools_module", path)
+    if not spec or not spec.loader:
+        raise RuntimeError(f"Unable to load tools module from {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _run_interactive(sandbox: Sandbox) -> None:
+    print("Interactive sandbox. End a block with an empty line. Type 'exit' to quit.")
+    buffer: list[str] = []
+    session = sandbox.start_session()
+    while True:
+        prompt = ">>> " if not buffer else "... "
+        try:
+            line = input(prompt)
+        except (EOFError, KeyboardInterrupt):
+            print()
+            break
+        if not buffer and line.strip().lower() in {"exit", "quit"}:
+            break
+        if line.strip() == "":
+            code = "\n".join(buffer).strip()
+            buffer = []
+            if not code:
+                continue
+            try:
+                result = session.execute(code)
+            except KeyboardInterrupt:
+                print()
+                break
+            if result.stdout:
+                print(result.stdout, end="")
+            if result.stderr:
+                print(result.stderr, end="", file=sys.stderr)
+            if result.error:
+                print(f"\033[31m{result.error}\033[0m", file=sys.stderr)
+            if result.final_answer is not None:
+                print(f"Final answer: {result.final_answer}")
+            continue
+        buffer.append(line)
+    session.close()
+
+
+def main(argv: Optional[list[str]] = None) -> None:
+    args = _parse_args(argv)
+
+    config = load_config(args.config) if args.config else None
+    mcp_client = None
+    sandbox = Sandbox(config=config)
+
+    if not args.config and not args.mcp_stdio and not args.mcp_server:
+        _run_interactive(sandbox)
         return
 
-    # A: Launch interactive sandbox (fake)
-    if not template and not mcp_stdio and not mcp_server:
-        print("Launching interactive sandbox (fake)")
-
-    # D: With MBPP tools (HTTP) - launch MCP server with URL
-    elif mcp_server:
-        print(f"Connecting to MCP server at {mcp_server} (fake for sandbox)")
-        parsed = urlparse(mcp_server)
+    if args.mcp_server:
+        parsed = urlparse(args.mcp_server)
         host = parsed.hostname or "127.0.0.1"
         port = parsed.port or 8000
-        # Launch MCP server as subprocess
-        print("Launching MCP server subprocess for HTTP transport")
         launch_mcp_server_subprocess(
             tools_module="mcp_tools_mbpp.py",
             transport="http",
             host=host,
-            port=port
+            port=port,
         )
         print("MCP server launched (HTTP mode)")
+        print("HTTP MCP client is not configured; sandbox will run without remote tools.")
+        _run_interactive(sandbox)
+        return
 
-    # Scenarios involving a template file
-    elif template:
-        # B: With custom configuration (fake)
-        if not mcp_stdio:
-            print(f"Launching sandbox with template {template} (fake)")
+    if args.mcp_stdio:
+        tools_module = args.mcp_stdio.replace("python ", "").strip()
+        module = _load_tools_module(tools_module)
+        mcp_client = LocalToolsClient(module)
+        sandbox = Sandbox(config=config, mcp_client=mcp_client)
+        _run_interactive(sandbox)
+        return
 
-        # C: With MBPP tools (stdio)
-        elif mcp_stdio and "mbpp" in mcp_stdio:
-            print("Launching sandbox with MBPP tools (stdio)")
-            # Extract tools module path from command
-            tools_module = mcp_stdio.replace("python ", "").strip()
-            run_mcp_server_stdio(tools_module=tools_module)
+    if args.config:
+        _run_interactive(sandbox)
 
-        # E: With SWE-bench tools
-        elif mcp_stdio and "swebench" in mcp_stdio:
-            print("Launching sandbox with SWE-bench tools (stdio)")
-            # Extract tools module path from command
-            tools_module = mcp_stdio.replace("python ", "").strip()
-            run_mcp_server_stdio(tools_module=tools_module)
+
+app = main
