@@ -144,7 +144,7 @@ class McpToolsSweBench:
         }
 
     @staticmethod
-    def parse_python_symbols(
+    def _parse_python_symbols(
         directory: str,
         include_references: bool = True,
     ) -> dict[str, Any]:
