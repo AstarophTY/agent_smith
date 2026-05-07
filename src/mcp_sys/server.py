@@ -67,22 +67,6 @@ class MCPServer:
                         f"Warning: Could not register {attr_name}: {e}"
                     )
 
-    def run(self, transport: Literal["stdio", "streamable-http"]) -> None:
-        self.containerizer.up()
-        try:
-            if transport == "streamable-http":
-                self.server.run(
-                    transport=transport,
-                    host=self.host,
-                    port=self.port,
-                    path=self.http_path,
-                )
-            else:
-                self.server.run(transport=transport)
-        finally:
-            self.containerizer.down()
-
-
 def run_server(
     transport: Literal["stdio", "streamable-http"] = "stdio",
     host: str = "127.0.0.1",
