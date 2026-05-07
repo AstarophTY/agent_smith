@@ -1,6 +1,8 @@
 from typing import Literal
 from fastmcp import FastMCP
 
+from mcp_sys.containerizer import Containerizer
+
 
 class MCPServer:
     def __init__(
@@ -13,6 +15,7 @@ class MCPServer:
         self.port = port
         self.http_path = http_path
         self.server = FastMCP("agent-smith-tools")
+        self.containerizer = Containerizer()
 
     def register_tools_module(self, module_path: str) -> None:
         """
@@ -36,7 +39,13 @@ class MCPServer:
             attr = getattr(module, attr_name)
             if isinstance(attr, type):
                 try:
-                    instance = attr()
+                    # Inject containerizer if the class accepts it
+                    import inspect
+                    sig = inspect.signature(attr.__init__)
+                    if "containerizer" in sig.parameters:
+                        instance = attr(containerizer=self.containerizer)
+                    else:
+                        instance = attr()
                 except Exception:
                     instance = attr
 
@@ -59,15 +68,19 @@ class MCPServer:
                     )
 
     def run(self, transport: Literal["stdio", "streamable-http"]) -> None:
-        if transport == "streamable-http":
-            self.server.run(
-                transport=transport,
-                host=self.host,
-                port=self.port,
-                path=self.http_path,
-            )
-        else:
-            self.server.run(transport=transport)
+        self.containerizer.up()
+        try:
+            if transport == "streamable-http":
+                self.server.run(
+                    transport=transport,
+                    host=self.host,
+                    port=self.port,
+                    path=self.http_path,
+                )
+            else:
+                self.server.run(transport=transport)
+        finally:
+            self.containerizer.down()
 
 
 def run_server(

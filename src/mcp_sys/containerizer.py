@@ -1,4 +1,5 @@
 import docker
+from typing import Any
 from docker.errors import APIError
 
 from logger.classes.Logger import Logger
@@ -45,8 +46,6 @@ class Containerizer:
             )
 
         Logger.debug(f"Starting container with image '{image}'...")
-        return None
-
         self.container = self.client.containers.run(
             image=image,
             command="/bin/bash",
@@ -81,15 +80,14 @@ class Containerizer:
             self.container = None
             Logger.debug("Container cleaned up.")
 
-    def cmd(self, command: str) -> dict[str, str]:
+    def cmd(self, command: str) -> dict[str, Any]:
         """Executes a command inside the running container.
 
         Args:
             command (str): The shell command to execute inside the container.
 
         Returns:
-            dict[str, str]: A dictionary containing 'stdout' and 'stderr'
-                keys with their respective decoded string outputs.
+            dict[str, Any]: A dictionary containing 'stdout', 'stderr' and 'exit_code'.
 
         Raises:
             RuntimeError: If no container is currently running.
@@ -106,7 +104,10 @@ class Containerizer:
             demux=True,
         )
 
-        stdout_bytes, stderr_bytes = output
+        if output is None:
+            stdout_bytes, stderr_bytes = None, None
+        else:
+            stdout_bytes, stderr_bytes = output
 
         # Decode bytes to string. If a stream is empty, Docker SDK returns None
         # so we fallback to an empty string.
@@ -116,6 +117,7 @@ class Containerizer:
         return {
             "stdout": stdout_str,
             "stderr": stderr_str,
+            "exit_code": exit_code,
         }
 
 

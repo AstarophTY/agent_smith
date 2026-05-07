@@ -3,20 +3,22 @@ from fnmatch import fnmatch
 import os
 import re
 import shlex
-import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 
 Symbol = dict[str, Any]
 
 
 class McpToolsSweBench:
-    @staticmethod
+    def __init__(self, containerizer: Optional[Any] = None) -> None:
+        self.containerizer = containerizer
+
     def run_command(
+        self,
         command: str,
         workdir: str,
-    ) -> subprocess.CompletedProcess[Any]:
+    ) -> dict[str, str]:
         """Execute a shell command in the specified working directory.
 
         Args:
@@ -24,12 +26,15 @@ class McpToolsSweBench:
             workdir: The working directory where the command will be run.
 
         Returns:
-            The result of subprocess.run().
+            A dictionary containing 'stdout' and 'stderr'.
         """
-        return subprocess.run(shlex.split(command), cwd=workdir)
+        if not self.containerizer:
+            raise RuntimeError("Containerizer is not initialized. Operations on the host machine are disabled.")
 
-    @staticmethod
-    def read_file(filepath: str, start_line: int, end_line: int) -> str:
+        full_command = f"cd {shlex.quote(workdir)} && {command}"
+        return self.containerizer.cmd(full_command)
+
+    def read_file(self, filepath: str, start_line: int, end_line: int) -> str:
         """Read specific lines from a file with line numbers.
 
         Args:
@@ -40,17 +45,20 @@ class McpToolsSweBench:
         Returns:
             A string containing the requested lines with line numbers prefixed.
         """
-        with open(filepath, "r", encoding="utf-8") as f:
-            buffer = f.readlines()
-        lines = buffer[start_line - 1:end_line]
+        if not self.containerizer:
+            raise RuntimeError("Containerizer is not initialized. Operations on the host machine are disabled.")
+
+        # Use sed to read specific lines in the container
+        cmd = f"sed -n '{start_line},{end_line}p' {shlex.quote(filepath)}"
+        result = self.containerizer.cmd(cmd)
+        lines = result["stdout"].splitlines(keepends=True)
 
         return "".join(
             f"{line_number + start_line}: {line_content}"
             for line_number, line_content in enumerate(lines)
         )
 
-    @staticmethod
-    def edit_file(filepath: str, old_str: str, new_str: str) -> None:
+    def edit_file(self, filepath: str, old_str: str, new_str: str) -> None:
         """Replace text content in a file.
 
         Args:
@@ -58,16 +66,22 @@ class McpToolsSweBench:
             old_str: The text to search for and replace.
             new_str: The replacement text.
         """
-        with open(filepath, "r", encoding="utf-8") as f:
-            buffer = f.read()
+        if not self.containerizer:
+            raise RuntimeError("Containerizer is not initialized. Operations on the host machine are disabled.")
 
-        new_content = buffer.replace(old_str, new_str)
+        # For simplicity, we can read the file, modify it locally, and write it back
+        # or use sed if possible. But reading/writing might be safer for complex strings.
+        read_cmd = f"cat {shlex.quote(filepath)}"
+        content = self.containerizer.cmd(read_cmd)["stdout"]
+        new_content = content.replace(old_str, new_str)
+        
+        # Write back using a temporary file and base64 to avoid shell escape issues
+        import base64
+        b64_content = base64.b64encode(new_content.encode("utf-8")).decode("utf-8")
+        write_cmd = f"echo {b64_content} | base64 -d > {shlex.quote(filepath)}"
+        self.containerizer.cmd(write_cmd)
 
-        with open(filepath, "w", encoding="utf-8") as f:
-            f.write(new_content)
-
-    @staticmethod
-    def list_files(directory: str, pattern: str) -> list[str]:
+    def list_files(self, directory: str, pattern: str) -> list[str]:
         """List files matching a pattern in a directory recursively.
 
         Args:
@@ -78,16 +92,19 @@ class McpToolsSweBench:
         Returns:
             A list of file paths matching the pattern.
         """
-        results: list[str] = []
-        for root, _, files in os.walk(directory):
-            for fname in files:
-                if fnmatch(fname, pattern) or len(pattern) <= 0:
-                    results.append(os.path.join(root, fname))
+        if not self.containerizer:
+            raise RuntimeError("Containerizer is not initialized. Operations on the host machine are disabled.")
 
-        return results
+        # Use find in the container
+        if pattern:
+            cmd = f"find {shlex.quote(directory)} -name {shlex.quote(pattern)}"
+        else:
+            cmd = f"find {shlex.quote(directory)} -type f"
+        
+        result = self.containerizer.cmd(cmd)
+        return result["stdout"].splitlines()
 
-    @staticmethod
-    def search_code(pattern: str, file_pattern: str) -> str:
+    def search_code(self, pattern: str, file_pattern: str) -> str:
         """Search for a regex pattern in files matching a file pattern.
 
         Args:
@@ -98,35 +115,22 @@ class McpToolsSweBench:
             A string with matching results in format:
                 filepath:line_number content.
         """
-        checker = re.compile(pattern)
-        matches: list[str] = []
+        if not self.containerizer:
+            raise RuntimeError("Containerizer is not initialized. Operations on the host machine are disabled.")
 
-        for root, _, files in os.walk("."):
-            for filename in files:
-                if not fnmatch(filename, file_pattern):
-                    continue
+        # Use grep in the container
+        # -r: recursive, -n: line number, -E: extended regex
+        # --include: filter files
+        grep_cmd = f"grep -rnE {shlex.quote(pattern)} ."
+        if file_pattern:
+            grep_cmd += f" --include={shlex.quote(file_pattern)}"
+        
+        result = self.containerizer.cmd(grep_cmd)
+        return result["stdout"]
 
-                file_path = os.path.join(root, filename)
-                try:
-                    with open(file_path, "r", encoding="utf-8") as handle:
-                        for line_number, line_content in enumerate(
-                            handle,
-                            start=1,
-                        ):
-                            if checker.search(line_content):
-                                line_path = os.path.abspath(file_path)
-                                matches.append(
-                                    f"{line_path}:{line_number} "
-                                    f"{line_content.rstrip()}"
-                                )
-                except (UnicodeDecodeError, IOError):
-                    continue
-
-        return "\n".join(matches)
-
-    def run_tests(self) -> None:
+    def run_tests(self) -> dict[str, str]:
         """Run the test suite using the agent-smith-test.sh script."""
-        self.run_command("sh agent-smith-test.sh", ".")
+        return self.run_command("sh agent-smith-test.sh", ".")
 
     @staticmethod
     def _payload(node: ast.AST, kind: str, name: str) -> Symbol:
@@ -143,8 +147,8 @@ class McpToolsSweBench:
             "end_column": end_column,
         }
 
-    @staticmethod
     def _parse_python_symbols(
+        self,
         directory: str,
         include_references: bool = True,
     ) -> dict[str, Any]:
@@ -156,17 +160,19 @@ class McpToolsSweBench:
         references_map: dict[str, list[Symbol]] = {}
         errors: list[str] = []
 
-        for file_path in Path(directory).rglob("*.py"):
-            if not file_path.is_file():
-                continue
+        files = self.list_files(directory, "*.py")
+
+        for file_path in files:
             try:
-                code = file_path.read_text(encoding="utf-8")
+                if not self.containerizer:
+                    raise RuntimeError("Containerizer is not initialized.")
+                code = self.containerizer.cmd(f"cat {shlex.quote(file_path)}")["stdout"]
                 tree = ast.parse(code, filename=str(file_path))
             except (OSError, SyntaxError, UnicodeDecodeError) as error:
                 errors.append(f"Error parsing {file_path}: {error}")
                 continue
 
-            file_key = str(file_path.resolve())
+            file_key = str(Path(file_path))
             defs: list[Symbol] = []
             refs: list[Symbol] = []
             parents: dict[ast.AST, ast.AST] = {}
@@ -233,8 +239,8 @@ class McpToolsSweBench:
             "errors": errors,
         }
 
-    @staticmethod
     def search_function_or_class_definition_in_code(
+        self,
         name: str,
         directory: str = ".",
     ) -> str:
@@ -243,7 +249,7 @@ class McpToolsSweBench:
         The output format matches `search_code` lines:
         filepath:line_number content
         """
-        data = McpToolsSweBench.parse_python_symbols(
+        data = self._parse_python_symbols(
             directory,
             include_references=False,
         )
@@ -256,8 +262,10 @@ class McpToolsSweBench:
                     continue
                 line_no = item.get("line", 0)
                 try:
-                    text = Path(file_path).read_text(encoding="utf-8")
-                    line = text.splitlines()[line_no - 1]
+                    if not self.containerizer:
+                        raise RuntimeError("Containerizer is not initialized.")
+                    code = self.containerizer.cmd(f"cat {shlex.quote(file_path)}")["stdout"]
+                    line = code.splitlines()[line_no - 1]
                 except Exception:
                     line = ""
                 matches.append(
@@ -266,31 +274,21 @@ class McpToolsSweBench:
 
         return "\n".join(matches)
 
-    @staticmethod
     def find_references(
+        self,
         name: str,
-        filepath: str | None = None,
-        line: int | None = None,
         directory: str = ".",
     ) -> str:
         """Find all usages of a symbol (function or class).
 
         Returns lines in the same format as `search_code`.
-        If `filepath` and `line` are provided, they are used only for
-        reference context (not required).
         """
-        data = McpToolsSweBench.parse_python_symbols(
+        data = self._parse_python_symbols(
             directory,
             include_references=True,
         )
         refs = data.get("references", {})
         matches: list[str] = []
-
-        if filepath is not None:
-            try:
-                _ = str(Path(filepath).resolve())
-            except Exception:
-                _ = None
 
         for file_path, items in refs.items():
             for item in items:
@@ -298,12 +296,14 @@ class McpToolsSweBench:
                     continue
                 line_no = item.get("line", 0)
                 try:
-                    text = Path(file_path).read_text(encoding="utf-8")
-                    content = text.splitlines()[line_no - 1]
+                    if not self.containerizer:
+                        raise RuntimeError("Containerizer is not initialized.")
+                    code = self.containerizer.cmd(f"cat {shlex.quote(file_path)}")["stdout"]
+                    line = code.splitlines()[line_no - 1]
                 except Exception:
-                    content = ""
+                    line = ""
                 matches.append(
-                    f"{file_path}:{line_no} {content.rstrip()}"
+                    f"{file_path}:{line_no} {line.rstrip()}"
                 )
 
         return "\n".join(matches)

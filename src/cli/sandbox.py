@@ -8,6 +8,7 @@ from typing import Any, Callable, Dict, Optional
 from urllib.parse import urlparse
 
 from sandbox import Sandbox, SandboxConfig
+from mcp_sys.containerizer import Containerizer
 
 
 def launch_mcp_server_subprocess(
@@ -71,9 +72,10 @@ def _parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
 class LocalToolsClient:
     """Local MCP-like client that dispatches to functions in a tools module."""
 
-    def __init__(self, module: ModuleType) -> None:
+    def __init__(self, module: ModuleType, containerizer: Optional[Containerizer] = None) -> None:
         self._tools: Dict[str, Callable[..., Any]] = {}
         self._schemas: list[dict[str, Any]] = []
+        self.containerizer = containerizer
         self._load_tools(module)
 
     def _load_tools(self, module: ModuleType) -> None:
@@ -83,7 +85,12 @@ class LocalToolsClient:
             attr = getattr(module, attr_name)
             if isinstance(attr, type):
                 try:
-                    instance = attr()
+                    # Inject containerizer if the class accepts it
+                    sig = inspect.signature(attr.__init__)
+                    if "containerizer" in sig.parameters:
+                        instance = attr(containerizer=self.containerizer)
+                    else:
+                        instance = attr()
                 except Exception:
                     instance = attr
                 self._register_instance(instance)
@@ -232,11 +239,22 @@ def main(argv: Optional[list[str]] = None) -> None:
         return
 
     if args.mcp_stdio:
+        from logger.classes.Logger import Logger
+        try:
+            Logger.setup("sandbox", "mcp-stdio")
+        except Exception:
+            pass
+
         tools_module = args.mcp_stdio.replace("python ", "").strip()
         module = _load_tools_module(tools_module)
-        mcp_client = LocalToolsClient(module)
-        sandbox = Sandbox(config=config, mcp_client=mcp_client)
-        _run_interactive(sandbox)
+        containerizer = Containerizer()
+        containerizer.up()
+        try:
+            mcp_client = LocalToolsClient(module, containerizer=containerizer)
+            sandbox = Sandbox(config=config, mcp_client=mcp_client)
+            _run_interactive(sandbox)
+        finally:
+            containerizer.down()
         return
 
     if args.config:
