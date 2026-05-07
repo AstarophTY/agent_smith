@@ -8,9 +8,18 @@ class ToolRegistry:
 
     @staticmethod
     def extract_tools_schema(mcp_client: Any) -> List[Dict[str, Any]]:
+        """Extract tool schema metadata from an MCP client.
+
+        Args:
+            mcp_client (Any): MCP client instance.
+
+        Returns:
+            List[Dict[str, Any]]: Tool schema list.
+        """
         if mcp_client is None:
             return []
-        if hasattr(mcp_client, "list_tools") and callable(mcp_client.list_tools):
+        if hasattr(mcp_client, "list_tools") \
+                and callable(mcp_client.list_tools):
             return list(mcp_client.list_tools())
         if hasattr(mcp_client, "tools"):
             tools = getattr(mcp_client, "tools")
@@ -20,7 +29,9 @@ class ToolRegistry:
             schema = mcp_client.schema
             if isinstance(schema, dict) and "tools" in schema:
                 return list(schema["tools"])
-        if hasattr(mcp_client, "get_schema") and callable(mcp_client.get_schema):
+        if hasattr(mcp_client, "get_schema") and callable(
+            mcp_client.get_schema
+        ):
             schema = mcp_client.get_schema()
             if isinstance(schema, dict) and "tools" in schema:
                 return list(schema["tools"])
@@ -28,12 +39,26 @@ class ToolRegistry:
 
     @staticmethod
     def build_manual(tools: List[Dict[str, Any]]) -> str:
-        lines = ["Available tools:", "- final_answer(answer_string): signal completion and return a final answer"]
+        """Build a human-readable tools manual.
+
+        Args:
+            tools (List[Dict[str, Any]]): Tool schema list.
+
+        Returns:
+            str: Formatted manual string.
+        """
+        lines = [
+            "Available tools:",
+            "- final_answer(answer_string): signal completion and return a "
+            "final answer"
+        ]
         for tool in tools:
             name = tool.get("name", "unknown")
             description = tool.get("description", "")
-            input_schema = tool.get("inputSchema") or tool.get("input_schema") or {}
-            properties = input_schema.get("properties", {}) if isinstance(input_schema, dict) else {}
+            input_schema = tool.get("inputSchema") \
+                or tool.get("input_schema") or {}
+            properties = input_schema.get("properties", {}) \
+                if isinstance(input_schema, dict) else {}
             args = ", ".join(sorted(properties.keys())) if properties else ""
             arg_text = f"({args})" if args else "()"
             line = f"- {name}{arg_text}"
@@ -48,15 +73,31 @@ class ToolRegistry:
         tool_pipe: Connection,
         param_order: List[str],
     ) -> Callable[..., Any]:
+        """Create a proxy function that calls a tool over a pipe.
+
+        Args:
+            tool_name (str): Tool name to call.
+            tool_pipe (Connection): Pipe to send tool requests.
+            param_order (List[str]): Positional parameter order from schema.
+
+        Returns:
+            Callable[..., Any]: Callable proxy for the tool.
+        """
         def tool_function(*args: Any, **kwargs: Any) -> Any:
             if args:
                 if len(args) > len(param_order):
-                    raise TypeError(f"Too many positional arguments for {tool_name}")
+                    raise TypeError(
+                        f"Too many positional arguments for {tool_name}"
+                    )
                 for name, value in zip(param_order, args):
                     if name in kwargs:
-                        raise TypeError(f"Multiple values for argument '{name}'")
+                        raise TypeError(
+                            f"Multiple values for argument '{name}'"
+                        )
                     kwargs[name] = value
-            tool_pipe.send({"type": "tool_call", "name": tool_name, "arguments": kwargs})
+            tool_pipe.send(
+                {"type": "tool_call", "name": tool_name, "arguments": kwargs}
+            )
             response = tool_pipe.recv()
             if response.get("status") == "error":
                 raise RuntimeError(response.get("error", "Tool call failed"))
@@ -68,6 +109,16 @@ class ToolRegistry:
 
     @staticmethod
     def param_order_from_schema(tool: Dict[str, Any]) -> List[str]:
-        input_schema = tool.get("inputSchema") or tool.get("input_schema") or {}
-        properties = input_schema.get("properties", {}) if isinstance(input_schema, dict) else {}
+        """Extract parameter order from a tool schema.
+
+        Args:
+            tool (Dict[str, Any]): Tool schema dictionary.
+
+        Returns:
+            List[str]: Parameter names in positional order.
+        """
+        input_schema = tool.get("inputSchema") or tool.get("input_schema") \
+            or {}
+        properties = input_schema.get("properties", {}) \
+            if isinstance(input_schema, dict) else {}
         return list(properties.keys()) if isinstance(properties, dict) else []

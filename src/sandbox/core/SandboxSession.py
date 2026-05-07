@@ -13,6 +13,11 @@ class SandboxSession:
     """Persistent sandbox session that keeps globals across executions."""
 
     def __init__(self, sandbox: "Sandbox") -> None:
+        """Create a persistent sandbox session.
+
+        Args:
+            sandbox (Sandbox): Owning sandbox instance.
+        """
         self._sandbox = sandbox
         self._sandbox._refresh_tools()
 
@@ -25,7 +30,11 @@ class SandboxSession:
         else:
             config_data = self._sandbox.config.dict()
 
-        tools = list(self._sandbox._tools) if self._sandbox.mcp_client is not None else []
+        tools = (
+            list(self._sandbox._tools)
+            if self._sandbox.mcp_client is not None
+            else []
+        )
         self._process = ctx.Process(
             target=SandboxWorker.run_loop,
             args=(control_child, tool_child, tools, config_data),
@@ -33,6 +42,14 @@ class SandboxSession:
         self._process.start()
 
     def execute(self, code: str) -> SandboxResult:
+        """Execute code inside the persistent worker process.
+
+        Args:
+            code (str): Python source code to execute.
+
+        Returns:
+            SandboxResult: Execution result.
+        """
         if not self._process.is_alive():
             return SandboxResult(
                 stdout="",
@@ -49,7 +66,10 @@ class SandboxSession:
 
         result_data: Dict[str, Any] = {}
         while True:
-            if self._sandbox.mcp_client is not None and self._tool_parent.poll(0.05):
+            if (
+                self._sandbox.mcp_client is not None
+                and self._tool_parent.poll(0.05)
+            ):
                 message = self._tool_parent.recv()
                 if message.get("type") == "tool_call":
                     response = self._sandbox._handle_tool_call(message)
@@ -57,7 +77,10 @@ class SandboxSession:
             if self._control_parent.poll(0.05):
                 result_data = self._control_parent.recv()
                 break
-            if time.monotonic() - start_time > self._sandbox.config.max_execution_time_seconds:
+            if (
+                time.monotonic() - start_time
+                > self._sandbox.config.max_execution_time_seconds
+            ):
                 timed_out = True
                 self._process.terminate()
                 break
@@ -81,9 +104,15 @@ class SandboxSession:
         )
 
     def is_alive(self) -> bool:
+        """Return whether the worker process is alive.
+
+        Returns:
+            bool: True if the process is alive.
+        """
         return self._process.is_alive()
 
     def close(self) -> None:
+        """Close the worker process and cleanup resources."""
         if not self._process.is_alive():
             return
         try:

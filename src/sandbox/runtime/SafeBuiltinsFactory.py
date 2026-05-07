@@ -5,10 +5,18 @@ from sandbox.config.SandboxConfig import SandboxConfig
 
 
 class SafeBuiltinsFactory:
-    """Builds the restricted builtins dictionary for sandbox execution."""
+    """Builds restricted builtins for sandbox execution."""
 
     @staticmethod
     def build(config: SandboxConfig) -> Dict[str, Any]:
+        """Build the allowed builtins mapping.
+
+        Args:
+            config (SandboxConfig): Sandbox configuration.
+
+        Returns:
+            Dict[str, Any]: Builtins mapping exposed to sandboxed code.
+        """
         _ = config
         return {
             "print": builtins.print,

@@ -1,2 +1,2 @@
 class SecurityException(Exception):
-    """Raised when sandbox security checks fail."""
+    """Error raised when sandbox security checks fail."""

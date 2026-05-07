@@ -7,7 +7,7 @@ from types import ModuleType
 from typing import Any, Callable, Dict, Optional
 from urllib.parse import urlparse
 
-from sandbox import Sandbox, SandboxConfig, SandboxSession
+from sandbox import Sandbox, SandboxConfig
 
 
 def launch_mcp_server_subprocess(
@@ -15,12 +15,16 @@ def launch_mcp_server_subprocess(
     transport: str = "stdio",
     host: str = "127.0.0.1",
     port: int = 8000,
-) -> subprocess.Popen:
+) -> subprocess.Popen[bytes]:
     """Launch mcp_server as a subprocess with the given tools module."""
     cmd = [
-        "uv", "run", "mcp_server",
-        "--transport", transport,
-        "--tools-module", tools_module,
+        "uv",
+        "run",
+        "mcp_server",
+        "--transport",
+        transport,
+        "--tools-module",
+        tools_module,
     ]
     if transport == "http":
         cmd.extend(["--host", host, "--port", str(port)])
@@ -32,9 +36,13 @@ def launch_mcp_server_subprocess(
 def run_mcp_server_stdio(tools_module: str) -> None:
     """Run mcp_server in foreground for stdio transport."""
     cmd = [
-        "uv", "run", "mcp_server",
-        "--transport", "stdio",
-        "--tools-module", tools_module,
+        "uv",
+        "run",
+        "mcp_server",
+        "--transport",
+        "stdio",
+        "--tools-module",
+        tools_module,
     ]
     print(f"Launching MCP server (foreground stdio): {' '.join(cmd)}")
     subprocess.run(cmd, check=False)
@@ -42,7 +50,11 @@ def run_mcp_server_stdio(tools_module: str) -> None:
 
 def _parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Secure sandbox CLI")
-    parser.add_argument("config", nargs="?", help="Path to sandbox config JSON")
+    parser.add_argument(
+        "config",
+        nargs="?",
+        help="Path to sandbox config JSON"
+    )
     parser.add_argument(
         "--mcp-stdio",
         dest="mcp_stdio",
@@ -86,19 +98,32 @@ class LocalToolsClient:
             if callable(method):
                 self._register_tool(method, name_override=method_name)
 
-    def _register_tool(self, func: Callable[..., Any], name_override: Optional[str] = None) -> None:
+    def _register_tool(
+        self,
+        func: Callable[..., Any],
+        name_override: Optional[str] = None,
+    ) -> None:
         name = name_override or getattr(func, "__name__", "tool")
+        assert isinstance(name, str)
         self._tools[name] = func
         self._schemas.append(self._build_schema(name, func))
 
-    def _build_schema(self, name: str, func: Callable[..., Any]) -> dict[str, Any]:
+    def _build_schema(
+        self,
+        name: str,
+        func: Callable[..., Any]
+    ) -> dict[str, Any]:
         signature = inspect.signature(func)
         properties: Dict[str, Any] = {}
         for param in signature.parameters.values():
             if param.name == "self":
                 continue
             properties[param.name] = {"type": "string"}
-        description = (func.__doc__ or "").strip().splitlines()[0] if func.__doc__ else ""
+        description = (
+            (func.__doc__ or "").strip().splitlines()[0]
+            if func.__doc__
+            else ""
+        )
         return {
             "name": name,
             "description": description,
@@ -124,7 +149,10 @@ def _load_tools_module(path: str) -> ModuleType:
 
 
 def _run_interactive(sandbox: Sandbox) -> None:
-    print("Interactive sandbox. End a block with an empty line. Type 'exit' to quit.")
+    print(
+        "Interactive sandbox. End a block with an empty line. "
+        "Type 'exit' to quit."
+    )
     buffer: list[str] = []
     while True:
         prompt = ">>> " if not buffer else "... "
@@ -134,7 +162,10 @@ def _run_interactive(sandbox: Sandbox) -> None:
             print()
             break
         except UnicodeDecodeError as exc:
-            print(f"\033[31mUnicodeDecodeError: {exc}\033[0m", file=sys.stderr)
+            print(
+                f"\033[31mUnicodeDecodeError: {exc}\033[0m",
+                file=sys.stderr,
+            )
             buffer = []
             continue
         if not buffer and line.strip().lower() in {"exit", "quit"}:
@@ -150,14 +181,20 @@ def _run_interactive(sandbox: Sandbox) -> None:
                 print()
                 break
             except Exception as exc:
-                print(f"\033[31m{exc.__class__.__name__}: {exc}\033[0m", file=sys.stderr)
+                print(
+                    f"\033[31m{exc.__class__.__name__}: {exc}\033[0m",
+                    file=sys.stderr,
+                )
                 continue
             if result.stdout:
                 print(result.stdout, end="")
             if result.stderr:
                 print(result.stderr, end="", file=sys.stderr)
             if result.error:
-                print(f"\033[31m{result.error}\033[0m", file=sys.stderr)
+                print(
+                    f"\033[31m{result.error}\033[0m",
+                    file=sys.stderr,
+                )
             if result.final_answer is not None:
                 print(f"Final answer: {result.final_answer}")
             continue
@@ -187,7 +224,10 @@ def main(argv: Optional[list[str]] = None) -> None:
             port=port,
         )
         print("MCP server launched (HTTP mode)")
-        print("HTTP MCP client is not configured; sandbox will run without remote tools.")
+        print(
+            "HTTP MCP client is not configured; sandbox will run without "
+            "remote tools."
+        )
         _run_interactive(sandbox)
         return
 

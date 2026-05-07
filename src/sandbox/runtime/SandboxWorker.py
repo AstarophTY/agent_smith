@@ -22,6 +22,14 @@ class SandboxWorker:
         tools: List[Dict[str, Any]],
         config_data: Dict[str, Any],
     ) -> None:
+        """Run the persistent execution loop inside the worker process.
+
+        Args:
+            control_pipe (Connection): Pipe for exec requests and results.
+            tool_pipe (Connection): Pipe for tool call requests and responses.
+            tools (List[Dict[str, Any]]): Tool schema list for MCP wrappers.
+            config_data (Dict[str, Any]): Serialized sandbox configuration.
+        """
         config = SandboxConfig(**config_data)
         allowed_calls = {"print", "final_answer", "generate_manual"}
         allowed_attribute_bases = AllowedAttributeBases.build(())
@@ -32,14 +40,23 @@ class SandboxWorker:
         )
 
         safe_builtins = SafeBuiltinsFactory.build(config)
-        globals_dict: Dict[str, Any] = {"__builtins__": safe_builtins, "__name__": "__sandbox__"}
-        globals_dict["generate_manual"] = lambda: ToolRegistry.build_manual(tools)
+        globals_dict: Dict[str, Any] = {
+            "__builtins__": safe_builtins,
+            "__name__": "__sandbox__",
+        }
+        globals_dict["generate_manual"] = lambda: ToolRegistry.build_manual(
+            tools
+        )
 
         for tool in tools:
             name = tool.get("name")
             if name:
                 param_order = ToolRegistry.param_order_from_schema(tool)
-                globals_dict[name] = ToolRegistry.make_tool_function(name, tool_pipe, param_order)
+                globals_dict[name] = ToolRegistry.make_tool_function(
+                    name,
+                    tool_pipe,
+                    param_order,
+                )
                 validator.allowed_calls.add(name)
 
         while True:
@@ -63,12 +80,26 @@ class SandboxWorker:
 
             try:
                 validator.validate(code)
-                with contextlib.redirect_stdout(stdout_buffer), contextlib.redirect_stderr(stderr_buffer):
+                with (
+                    contextlib.redirect_stdout(stdout_buffer),
+                    contextlib.redirect_stderr(stderr_buffer),
+                ):
                     import resource
                     max_bytes = config.max_memory_mb * 1024 * 1024
-                    resource.setrlimit(resource.RLIMIT_AS, (max_bytes, max_bytes))
-                    resource.setrlimit(resource.RLIMIT_CPU, (config.max_execution_time_seconds, config.max_execution_time_seconds))
-                    exec(compile(code, "<sandbox>", "exec"), globals_dict, None)
+                    resource.setrlimit(
+                        resource.RLIMIT_AS, (max_bytes, max_bytes)
+                    )
+                    resource.setrlimit(
+                        resource.RLIMIT_CPU,
+                        (
+                            config.max_execution_time_seconds,
+                            config.max_execution_time_seconds,
+                        ),
+                    )
+                    exec(
+                        compile(code, "<sandbox>", "exec"), globals_dict,
+                        None
+                    )
                 control_pipe.send({
                     "stdout": stdout_buffer.getvalue(),
                     "stderr": stderr_buffer.getvalue(),
