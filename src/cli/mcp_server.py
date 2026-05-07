@@ -44,4 +44,10 @@ def main(
         protocol = "streamable-http"
     else:
         protocol = "stdio"
-    run_server(transport=protocol, host=host, port=port, http_path=http_path, tools_module=tools_module)
+    run_server(
+        transport=protocol,
+        host=host,
+        port=port,
+        http_path=http_path,
+        tools_module=tools_module,
+    )

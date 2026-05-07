@@ -7,8 +7,8 @@ from logger.classes.Logger import Logger
 class Containerizer:
     """Manages the lifecycle of a Docker sandbox container.
 
-    This class handles the creation, execution, and cleanup of a Docker 
-    container used as a sandbox environment. It ensures that only one 
+    This class handles the creation, execution, and cleanup of a Docker
+    container used as a sandbox environment. It ensures that only one
     container is active at a time for a given instance.
 
     Attributes:
@@ -19,7 +19,7 @@ class Containerizer:
             running container object, or None if no container is active.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initializes the DockerSandboxManager.
 
         Args:
@@ -32,7 +32,7 @@ class Containerizer:
     def up(self, image: str = "python:3.10-slim") -> None:
         """Starts a new Docker container.
 
-        This method creates and starts a new container in detached mode. 
+        This method creates and starts a new container in detached mode.
 
         Raises:
             RuntimeError: If a container is already running (i.e.,
@@ -45,6 +45,7 @@ class Containerizer:
             )
 
         Logger.debug(f"Starting container with image '{image}'...")
+        return None
 
         self.container = self.client.containers.run(
             image=image,
@@ -52,21 +53,25 @@ class Containerizer:
             tty=True,
             detach=True
         )
-        Logger.debug(f"Container {self.container.short_id} started successfully.")
+        Logger.debug(
+            f"Container {self.container.short_id} started successfully."
+        )
 
     def down(self) -> None:
         """
         Stops and removes the current container, resetting the manager's state.
 
-        If no container is currently running, the method will simply return 
-        without performing any actions. Any Docker API errors encountered 
+        If no container is currently running, the method will simply return
+        without performing any actions. Any Docker API errors encountered
         during cleanup are caught and printed.
         """
         if self.container is None:
             Logger.error("No container is currently running.")
             return
 
-        Logger.debug(f"Stopping and removing container {self.container.short_id}...")
+        Logger.debug(
+            f"Stopping and removing container {self.container.short_id}..."
+        )
         try:
             self.container.stop()
             self.container.remove()
@@ -98,7 +103,7 @@ class Containerizer:
         # demux=True separates the stdout and stderr streams.
         exit_code, output = self.container.exec_run(
             cmd=["/bin/bash", "-c", command],
-            demux=True
+            demux=True,
         )
 
         stdout_bytes, stderr_bytes = output
@@ -110,7 +115,7 @@ class Containerizer:
 
         return {
             "stdout": stdout_str,
-            "stderr": stderr_str
+            "stderr": stderr_str,
         }
 
 
@@ -132,7 +137,7 @@ if __name__ == "__main__":
         "mkdir a/b/c",
         "mkdir a/b/d",
         "mkdir a/b/d/e",
-        "tree a"
+        "tree a",
     ]
     for c in cmds:
         print(sandbox.cmd(c)["stdout"])

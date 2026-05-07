@@ -25,9 +25,9 @@ debug:
 	$(UV) run python -m pdb -m $(SRC_DIR)
 
 lint:
-	$(UV) run flake8 $(PY_FILES)
-	$(UV) run mypy $(PY_FILES) $(MYPY_FLAG)
+	$(UV) run flake8 $(SRC_DIR)
+	$(UV) run mypy $(SRC_DIR) $(MYPY_FLAG)
 
 lint-strict:
-	$(UV) run flake8 $(PY_FILES)
-	$(UV) run mypy $(PY_FILES) --strict
+	$(UV) run flake8 $(SRC_DIR)
+	$(UV) run mypy $(SRC_DIR) --strict
