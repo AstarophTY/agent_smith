@@ -7,7 +7,7 @@ from types import ModuleType
 from typing import Any, Callable, Dict, Optional
 from urllib.parse import urlparse
 
-from sandbox import Sandbox, SandboxSession, load_config
+from sandbox import Sandbox, SandboxConfig, SandboxSession
 
 
 def launch_mcp_server_subprocess(
@@ -162,7 +162,7 @@ def _run_interactive(sandbox: Sandbox) -> None:
 def main(argv: Optional[list[str]] = None) -> None:
     args = _parse_args(argv)
 
-    config = load_config(args.config) if args.config else None
+    config = SandboxConfig.load_config(args.config) if args.config else None
     mcp_client = None
     sandbox = Sandbox(config=config)
 

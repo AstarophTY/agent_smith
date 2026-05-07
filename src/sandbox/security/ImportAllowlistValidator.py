@@ -2,7 +2,7 @@ import ast
 from fnmatch import fnmatch
 from typing import Any, Iterable, Set
 
-from .exceptions import SecurityException
+from .SecurityException import SecurityException
 
 
 class ImportAllowlistValidator(ast.NodeVisitor):
@@ -24,7 +24,7 @@ class ImportAllowlistValidator(ast.NodeVisitor):
 
     def visit_Import(self, node: ast.Import) -> Any:
         for alias in node.names:
-            if not self._is_allowed_import(alias.name):
+            if not self.is_allowed_import(self.authorized_imports, alias.name):
                 raise SecurityException(f"Import not allowed: {alias.name}")
             base_name = (alias.asname or alias.name).split(".")[0]
             self.allowed_attribute_bases.add(base_name)
@@ -36,7 +36,10 @@ class ImportAllowlistValidator(ast.NodeVisitor):
         module_name = node.module
         for alias in node.names:
             full_name = f"{module_name}.{alias.name}"
-            if not (self._is_allowed_import(module_name) or self._is_allowed_import(full_name)):
+            if not (
+                self.is_allowed_import(self.authorized_imports, module_name)
+                or self.is_allowed_import(self.authorized_imports, full_name)
+            ):
                 raise SecurityException(f"Import not allowed: {full_name}")
             name = alias.asname or alias.name
             self.allowed_calls.add(name)
@@ -54,14 +57,6 @@ class ImportAllowlistValidator(ast.NodeVisitor):
             raise SecurityException("Call not allowed")
         self.generic_visit(node)
 
-    def _is_allowed_import(self, module_name: str) -> bool:
-        return any(fnmatch(module_name, pattern) for pattern in self.authorized_imports)
-
-
-def build_allowed_attribute_bases(authorized_imports: Iterable[str]) -> Set[str]:
-    bases: Set[str] = set()
-    for pattern in authorized_imports:
-        base = pattern.split(".")[0]
-        if base:
-            bases.add(base)
-    return bases
+    @staticmethod
+    def is_allowed_import(authorized_imports: Iterable[str], module_name: str) -> bool:
+        return any(fnmatch(module_name, pattern) for pattern in authorized_imports)
