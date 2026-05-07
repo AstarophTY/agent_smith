@@ -126,7 +126,6 @@ def _load_tools_module(path: str) -> ModuleType:
 def _run_interactive(sandbox: Sandbox) -> None:
     print("Interactive sandbox. End a block with an empty line. Type 'exit' to quit.")
     buffer: list[str] = []
-    session = sandbox.start_session()
     while True:
         prompt = ">>> " if not buffer else "... "
         try:
@@ -134,6 +133,10 @@ def _run_interactive(sandbox: Sandbox) -> None:
         except (EOFError, KeyboardInterrupt):
             print()
             break
+        except UnicodeDecodeError as exc:
+            print(f"\033[31mUnicodeDecodeError: {exc}\033[0m", file=sys.stderr)
+            buffer = []
+            continue
         if not buffer and line.strip().lower() in {"exit", "quit"}:
             break
         if line.strip() == "":
@@ -142,10 +145,13 @@ def _run_interactive(sandbox: Sandbox) -> None:
             if not code:
                 continue
             try:
-                result = session.execute(code)
+                result = sandbox.execute(code)
             except KeyboardInterrupt:
                 print()
                 break
+            except Exception as exc:
+                print(f"\033[31m{exc.__class__.__name__}: {exc}\033[0m", file=sys.stderr)
+                continue
             if result.stdout:
                 print(result.stdout, end="")
             if result.stderr:
@@ -156,7 +162,7 @@ def _run_interactive(sandbox: Sandbox) -> None:
                 print(f"Final answer: {result.final_answer}")
             continue
         buffer.append(line)
-    session.close()
+    sandbox.close()
 
 
 def main(argv: Optional[list[str]] = None) -> None:

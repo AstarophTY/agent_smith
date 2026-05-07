@@ -80,6 +80,9 @@ class SandboxSession:
             exit_code=self._process.exitcode,
         )
 
+    def is_alive(self) -> bool:
+        return self._process.is_alive()
+
     def close(self) -> None:
         if not self._process.is_alive():
             return
