@@ -31,7 +31,50 @@ class SandboxWorker:
             config_data (Dict[str, Any]): Serialized sandbox configuration.
         """
         config = SandboxConfig(**config_data)
-        allowed_calls = {"print", "final_answer", "generate_manual"}
+        allowed_calls = {
+            # Base
+            "print",
+            "input",
+            "len",
+            "range",
+            "enumerate",
+            "zip",
+            "map",
+            "filter",
+            "sorted",
+            "reversed",
+            "sum",
+            "min",
+            "max",
+            "abs",
+            "round",
+            "pow",
+            "divmod",
+            "all",
+            "any",
+
+            # Types / conversion
+            "str",
+            "int",
+            "float",
+            "bool",
+            "list",
+            "dict",
+            "set",
+            "tuple",
+
+            # Inspection
+            "type",
+            "isinstance",
+            "hasattr",
+            "getattr",
+            "setattr",
+            "callable",
+
+            # Custom agent tools
+            "final_answer",
+            "generate_manual",
+        }
         allowed_attribute_bases = AllowedAttributeBases.build(())
         validator = ImportAllowlistValidator(
             (),
