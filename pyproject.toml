@@ -5,16 +5,26 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "docker>=7.1.0",
     "dotenv>=0.9.9",
+    "fastmcp>=3.2.4",
     "flake8>=7.3.0",
+    "mcp>=1.22.0",
     "mypy>=1.20.2",
     "typer>=0.25.1",
+    "types-authlib>=1.6.11.20260418",
+    "types-docker>=7.1.0.20260409",
+    "types-jsonschema>=4.26.0.20260408",
+    "types-pygments>=2.20.0.20260408",
+    "types-pyyaml>=6.0.12.20260408",
+    "types-requests>=2.33.0.20260503",
 ]
 
 [project.scripts]
 sandbox = "cli.sandbox:app"
 agent_mbpp = "cli.agent_mbpp:app"
 agent_swebench = "cli.agent_swebench:app"
+mcp_server = "cli.mcp_server:app"
 
 [build-system]
 requires = ["setuptools>=68.0", "setuptools-scm>=8.0"]
@@ -22,3 +32,16 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.mypy]
+mypy_path = ["src"]
+namespace_packages = true
+explicit_package_bases = true
+
+[[tool.mypy.overrides]]
+module = "mcp_sys.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "logger.*"
+ignore_missing_imports = true
