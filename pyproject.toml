@@ -12,6 +12,12 @@ dependencies = [
     "mcp>=1.22.0",
     "mypy>=1.20.2",
     "typer>=0.25.1",
+    "types-authlib>=1.6.11.20260418",
+    "types-docker>=7.1.0.20260409",
+    "types-jsonschema>=4.26.0.20260408",
+    "types-pygments>=2.20.0.20260408",
+    "types-pyyaml>=6.0.12.20260408",
+    "types-requests>=2.33.0.20260503",
 ]
 
 [project.scripts]
