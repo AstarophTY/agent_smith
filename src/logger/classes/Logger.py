@@ -58,6 +58,7 @@ class Logger:
 
         console_out = logging.StreamHandler(sys.stdout)
         console_out.setLevel(logging.DEBUG)
+        console_out.addFilter(lambda r: r.levelno <= logging.INFO)
         console_out.setFormatter(console_formatter)
 
         console_err = logging.StreamHandler()

@@ -5,12 +5,16 @@ import asyncio
 
 from models.MBPPTaskInput import MBPPTaskInput
 from agenticloop.classes.AgenticLoop import AgenticLoop, AgenticLoopResult
+from cli.sandbox import load_tools_module
 
 app = typer.Typer()
 
 
 async def _run(task: MBPPTaskInput) -> AgenticLoopResult:
-    async with AgenticLoop(max_iterations=10) as loop:
+    async with AgenticLoop(
+        max_iterations=10,
+        tool_module=load_tools_module("mcp_tools_mbpp.py")
+    ) as loop:
         result = await loop.run(
             task=task
         )
@@ -65,11 +69,3 @@ def main(
         json.dump(payload, handle, ensure_ascii=False, indent=2)
         handle.write("\n")
 
-    print("Running MBPP agent with:")
-    print(f"  Task file: {task_file}")
-    print(f"  Output: {output}")
-    print(f"  Model: {model_name}")
-    print(f"  Provider URL: {provider_url}")
-    print(f"  Validated task ID: {task.task_id}")
-    if result.final_answer is not None:
-        print(result.final_answer)

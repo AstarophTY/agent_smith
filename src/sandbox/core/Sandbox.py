@@ -15,7 +15,8 @@ class Sandbox:
     def __init__(
         self,
         config: Optional[SandboxConfig] = None,
-        mcp_client: Any = None
+        mcp_client: Any = None,
+        docker_image: Optional[str] = None
     ) -> None:
         """Initialize a sandbox instance.
 

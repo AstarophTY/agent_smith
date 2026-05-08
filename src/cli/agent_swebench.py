@@ -1,11 +1,25 @@
 import json
 
 import typer
+import asyncio
 
 from models.SWEBenchTaskInput import SWEBenchTaskInput
-
+from agenticloop.classes.AgenticLoop import AgenticLoop, AgenticLoopResult
+from cli.sandbox import load_tools_module
 
 app = typer.Typer()
+
+
+async def _run(task: SWEBenchTaskInput) -> AgenticLoopResult:
+    async with AgenticLoop(
+        max_iterations=10,
+        tool_module=load_tools_module("mcp_tools_swebench.py"),
+        docker_image=task.docker_image
+    ) as loop:
+        result = await loop.run(
+            task=task
+        )
+    return result
 
 
 @app.callback(invoke_without_command=True)
@@ -36,10 +50,6 @@ def main(
     with open(task_file, "r", encoding="utf-8") as handle:
         task = SWEBenchTaskInput.model_validate(json.load(handle))
 
-    print("Running SWE-bench agent with:")
-    print(f"  Task file: {task_file}")
-    print(f"  Output: {output}")
-    print(f"  Model: {model_name}")
-    print(f"  Provider URL: {provider_url}")
-    print(f"  Validated instance ID: {task.instance_id}")
-    # TODO: Implement agent logic
+    result = asyncio.run(_run(task))
+
+    print(result.final_answer)

@@ -1,9 +1,13 @@
 import re
+import shutil
 from typing import Optional, Any
+from types import ModuleType
 from logger.classes.Logger import Logger
 from agenticloop.classes.Model import Model, LLMResponse
 from sandbox.core.Sandbox import Sandbox
 from models import SandboxConfig, SWEBenchTaskInput, MBPPTaskInput
+from mcp_sys.containerizer import Containerizer
+from cli.sandbox import LocalToolsClient
 
 
 class AgenticLoopResult:
@@ -20,14 +24,36 @@ class AgenticLoopResult:
 class AgenticLoop:
     def __init__(
         self,
+        tool_module: ModuleType,
+        docker_image: str = "",
         max_iterations: int = 10,
-        sandbox_config: Optional[SandboxConfig] = None,
+        sandbox_config: Optional[SandboxConfig] = None
     ):
         if not Logger._initialized:
             Logger.setup("a", "b")
         self.max_iterations = max_iterations
         self.model = Model()
-        self.sandbox = Sandbox(config=sandbox_config)
+
+        if docker_image != "":
+            # Swebench Mode
+            module = tool_module
+            self.containerizer = Containerizer()
+            self.containerizer.up(docker_image)
+            try:
+                self.mcp_client = LocalToolsClient(
+                    module,
+                    containerizer=self.containerizer
+                )
+                self.sandbox = Sandbox(
+                    config=sandbox_config,
+                    mcp_client=self.mcp_client
+                )
+            except Exception as e:
+                raise Exception(e)
+        else:
+            # MBPP Mode
+            self.sandbox = Sandbox(config=sandbox_config)
+
         Logger.debug("Build Agentic Loop object")
 
     def _extract_code(self, llm_response: LLMResponse) -> Optional[str]:
@@ -50,7 +76,7 @@ class AgenticLoop:
             Logger.debug(
                 "Fallback extraction failed to find python code block"
             )
-            
+
         return code_match.group(1).strip() if code_match else None
 
     def _build_mbpp_test_code(
@@ -58,11 +84,12 @@ class AgenticLoop:
         task: MBPPTaskInput,
         candidate_code: str,
     ) -> str:
+        candidate_core = self._strip_assert_lines(candidate_code)
         lines: list[str] = [
             "def final_answer(*args, **kwargs):",
             "    return None",
             "",
-            candidate_code,
+            candidate_core,
             "",
         ]
         if task.test_imports:
@@ -77,6 +104,44 @@ class AgenticLoop:
             if not line.strip().startswith("assert ")
         ]
         return "\n".join(cleaned_lines).strip()
+
+    def _clip_log_text(self, text: str, max_chars: int = 4000) -> str:
+        if len(text) <= max_chars:
+            return text
+        return (
+            f"{text[:max_chars]}\n"
+            f"...[truncated {len(text) - max_chars} chars]"
+        )
+
+    def _boxed_text(
+        self,
+        text: str,
+        max_lines: int = 10
+    ) -> str:
+        lines = text.splitlines() or [""]
+        terminal_width = shutil.get_terminal_size((120, 20)).columns
+        max_width = max(20, terminal_width - 6)
+
+        if len(lines) > max_lines:
+            visible = lines[:max_lines - 1]
+            hidden_count = len(lines) - (max_lines - 1)
+            visible.append(f"... (+{hidden_count} lines)")
+        else:
+            visible = lines
+
+        trimmed: list[str] = []
+        for line in visible:
+            if len(line) > max_width:
+                trimmed.append(line[: max_width - 3] + "...")
+            else:
+                trimmed.append(line)
+
+        inner_width = max_width
+        top = "┌" + ("─" * (inner_width + 2)) + "┐"
+        bottom = "└" + ("─" * (inner_width + 2)) + "┘"
+
+        body = [f"│ {line.ljust(inner_width)} │" for line in trimmed]
+        return "\n".join([top, *body, bottom])
 
     def _build_context_message(
         self,
@@ -105,13 +170,16 @@ class AgenticLoop:
         context += "    final_answer(your_answer_here)\n"
         context += "For example: final_answer(15) or final_answer('result')\n"
 
+        context += "You can use theses functions: "
+        context += f"{self.mcp_client.list_tools()}"
+
         return context
 
     async def run(
         self,
         task: MBPPTaskInput | SWEBenchTaskInput,
         initial_code: Optional[str] = None
-    ) -> AgenticLoopResult:
+    ) -> AgenticLoopResult:    
         result = AgenticLoopResult()
         history: list[dict[str, Any]] = []
         messages: list[dict[str, str]] = []
@@ -129,12 +197,22 @@ class AgenticLoop:
                 "`final_answer([python code without test as string])`"
             )
         elif isinstance(task, SWEBenchTaskInput):
-            task_str = task.problem_statement
-
-        Logger.info(f"Starting agentic loop for task: {task_str}")
+            self.containerizer.cmd(
+                f"echo \"{task.eval_script.replace("\"", "\\\"")}\" "
+                "> /testbed/agent-smith-test.sh"
+            )
+            task_str = (
+                f"{task.problem_statement}"
+                "Before finishing the task, execute run_tests()."
+                "All the tests must be okay to terminate."
+            )
 
         if initial_code:
             Logger.info("Executing initial code...")
+            Logger.info(
+                "Initial code injected in sandbox:\n"
+                f"{self._boxed_text(initial_code)}"
+            )
             sandbox_result = self.sandbox.execute(initial_code)
 
             history.append({
@@ -158,10 +236,24 @@ class AgenticLoop:
         for iteration in range(self.max_iterations):
             result.iterations = iteration + 1
 
-            Logger.info(f"Iteration {iteration + 1}: Calling LLM...")
+            Logger.info(f"=== Iteration {iteration + 1} ===")
+            Logger.debug("Building context for model call")
             context_message = self._build_context_message(
                 task_str, iteration, history
             )
+            lines = context_message.splitlines() or [""]
+            if len(lines) > 10:
+                visible = lines[:9]
+                hidden_count = len(lines) - 9
+                visible.append(f"... (+{hidden_count} lines)")
+            else:
+                visible = lines
+            Logger.info(
+                "Sending prompt to model:\n"
+                f"\033[90m{"\n".join(visible)}\033[0m"
+            )
+
+            Logger.info("Calling model")
 
             try:
                 llm_response = await self.model.get_next_step(
@@ -174,6 +266,19 @@ class AgenticLoop:
                 result.success = False
                 result.history = history
                 return result
+
+            if llm_response.thought:
+                lines = llm_response.thought.splitlines() or [""]
+                if len(lines) > 10:
+                    visible = lines[:9]
+                    hidden_count = len(lines) - 9
+                    visible.append(f"... (+{hidden_count} lines)")
+                else:
+                    visible = lines
+                Logger.info(
+                    "Model thought:\n"
+                    f"\033[90m{"\n".join(visible)}\033[0m"
+                )
 
             messages.append({
                 "role": "user",
@@ -197,6 +302,10 @@ class AgenticLoop:
                 continue
 
             Logger.debug(f"Extracted code:\n{code}")
+            Logger.info(
+                "Injecting code in sandbox:\n"
+                f"{self._boxed_text(code)}"
+            )
             result.final_code = code
 
             if isinstance(task, MBPPTaskInput) and "assert " not in code:
@@ -245,7 +354,9 @@ class AgenticLoop:
                 if tests_stderr:
                     Logger.warning(f"MBPP tests stderr: {tests_stderr}")
                 if tests_error:
-                    Logger.warning(f"MBPP tests error: {tests_error}")
+                    Logger.warning(
+                        f"MBPP tests error: {tests_error}"
+                    )
 
             history.append({
                 "type": "execution",
@@ -320,6 +431,11 @@ class AgenticLoop:
         return result
 
     def close(self) -> None:
+        try:
+            self.containerizer.down()
+        except Exception:
+            # If containerizer doesn´t exist, we are in MBPP mode
+            pass
         self.sandbox.close()
 
     async def __aenter__(self):
