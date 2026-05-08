@@ -145,7 +145,9 @@ class SandboxWorker:
                         ),
                     )
                     exec(
-                        compile(code, "<sandbox>", "exec"), globals_dict,
+                        compile(
+                            code, "<sandbox>", "exec", optimize=0
+                        ), globals_dict,
                         None
                     )
                 control_pipe.send({

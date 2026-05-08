@@ -3,6 +3,8 @@ from openai import AsyncOpenAI
 from pydantic import BaseModel
 from typing import Optional, List
 from dotenv import load_dotenv
+from logger.classes.Logger import Logger
+
 
 
 class LLMResponse(BaseModel):
@@ -53,7 +55,6 @@ class Model:
             )
 
             full_text = response.choices[0].message.content
-            from logger.classes.Logger import Logger
             Logger.debug(f"LLM RAW RESPONSE: {full_text}")
             return self._parse_output(full_text)
 
@@ -80,7 +81,8 @@ class Model:
 
 if __name__ == "__main__":
     import asyncio
-
+    Logger.setup("test", "test")
+    Logger.debug("Start run the main")
     async def test():
         service = Model()
         res = await service.get_next_step(

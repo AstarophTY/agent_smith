@@ -3,7 +3,7 @@ from typing import Optional, Any
 from logger.classes.Logger import Logger
 from agenticloop.classes.Model import Model, LLMResponse
 from sandbox.core.Sandbox import Sandbox
-from models.SandboxConfig import SandboxConfig
+from models import SandboxConfig, SWEBenchTaskInput, MBPPTaskInput
 
 
 class AgenticLoopResult:
@@ -28,13 +28,17 @@ class AgenticLoop:
         self.max_iterations = max_iterations
         self.model = Model()
         self.sandbox = Sandbox(config=sandbox_config)
+        Logger.debug("Build Agentic Loop object")
 
     def _extract_code(self, llm_response: LLMResponse) -> Optional[str]:
         if llm_response.code:
             Logger.debug("Using code already extracted by Model")
             return llm_response.code
 
-        Logger.debug("Model didn't find code, trying fallback extraction in AgenticLoop")
+        Logger.debug(
+            "Model didn't find code, trying fallback extraction "
+            "in AgenticLoop"
+        )
         code_match = re.search(
             r"```python\s+(.*?)\s+```",
             llm_response.raw_content,
@@ -43,9 +47,36 @@ class AgenticLoop:
         if code_match:
             Logger.debug("Fallback extraction found python code block")
         else:
-            Logger.debug("Fallback extraction failed to find python code block")
+            Logger.debug(
+                "Fallback extraction failed to find python code block"
+            )
             
         return code_match.group(1).strip() if code_match else None
+
+    def _build_mbpp_test_code(
+        self,
+        task: MBPPTaskInput,
+        candidate_code: str,
+    ) -> str:
+        lines: list[str] = [
+            "def final_answer(*args, **kwargs):",
+            "    return None",
+            "",
+            candidate_code,
+            "",
+        ]
+        if task.test_imports:
+            lines.extend(task.test_imports)
+            lines.append("")
+        lines.extend(task.test_list)
+        return "\n".join(lines)
+
+    def _strip_assert_lines(self, code: str) -> str:
+        cleaned_lines = [
+            line for line in code.splitlines()
+            if not line.strip().startswith("assert ")
+        ]
+        return "\n".join(cleaned_lines).strip()
 
     def _build_context_message(
         self,
@@ -78,14 +109,29 @@ class AgenticLoop:
 
     async def run(
         self,
-        task: str,
+        task: MBPPTaskInput | SWEBenchTaskInput,
         initial_code: Optional[str] = None
     ) -> AgenticLoopResult:
         result = AgenticLoopResult()
         history: list[dict[str, Any]] = []
         messages: list[dict[str, str]] = []
 
-        Logger.info(f"Starting agentic loop for task: {task}")
+        if isinstance(task, MBPPTaskInput):
+            task_str = (
+                f"{task.task_definition} "
+                "The function must follow this prototype:"
+                f" {task.function_definition}. "
+                f"The function should pass theses tests: {task.test_list}. "
+                "Before finishing the task, execute all the assert tests. "
+                "Always write the assert tests at the end of your code. "
+                "If the program answers nothing, all the tests pass. "
+                "After finishing the task, execute"
+                "`final_answer([python code without test as string])`"
+            )
+        elif isinstance(task, SWEBenchTaskInput):
+            task_str = task.problem_statement
+
+        Logger.info(f"Starting agentic loop for task: {task_str}")
 
         if initial_code:
             Logger.info("Executing initial code...")
@@ -114,7 +160,7 @@ class AgenticLoop:
 
             Logger.info(f"Iteration {iteration + 1}: Calling LLM...")
             context_message = self._build_context_message(
-                task, iteration, history
+                task_str, iteration, history
             )
 
             try:
@@ -153,6 +199,12 @@ class AgenticLoop:
             Logger.debug(f"Extracted code:\n{code}")
             result.final_code = code
 
+            if isinstance(task, MBPPTaskInput) and "assert " not in code:
+                Logger.warning(
+                    "Model code has no assert statements; "
+                    "running canonical MBPP tests anyway"
+                )
+
             Logger.info("Executing code in sandbox...")
             try:
                 sandbox_result = self.sandbox.execute(code)
@@ -171,6 +223,30 @@ class AgenticLoop:
             if sandbox_result.error:
                 Logger.debug(f"Sandbox error: {sandbox_result.error}")
 
+            tests_stdout = ""
+            tests_stderr = ""
+            tests_error = None
+            tests_timed_out = False
+
+            if (
+                isinstance(task, MBPPTaskInput)
+                and not sandbox_result.error
+                and not sandbox_result.stderr
+            ):
+                test_code = self._build_mbpp_test_code(task, code)
+                Logger.info("Executing canonical MBPP tests in sandbox...")
+                tests_result = self.sandbox.execute(test_code)
+                tests_stdout = tests_result.stdout
+                tests_stderr = tests_result.stderr
+                tests_error = tests_result.error
+                tests_timed_out = tests_result.timed_out
+
+                Logger.debug(f"MBPP tests output: {tests_stdout}")
+                if tests_stderr:
+                    Logger.warning(f"MBPP tests stderr: {tests_stderr}")
+                if tests_error:
+                    Logger.warning(f"MBPP tests error: {tests_error}")
+
             history.append({
                 "type": "execution",
                 "code": code,
@@ -180,9 +256,25 @@ class AgenticLoop:
                 "error": sandbox_result.error,
                 "final_answer": sandbox_result.final_answer,
                 "timed_out": sandbox_result.timed_out,
+                "tests_stdout": tests_stdout,
+                "tests_stderr": tests_stderr,
+                "tests_error": tests_error,
+                "tests_timed_out": tests_timed_out,
             })
 
-            if sandbox_result.final_answer is not None:
+            tests_passed = (
+                not tests_error
+                and not tests_stderr
+                and not tests_timed_out
+            )
+
+            if (
+                sandbox_result.final_answer is not None
+                and (
+                    not isinstance(task, MBPPTaskInput)
+                    or tests_passed
+                )
+            ):
                 result.final_answer = sandbox_result.final_answer
                 result.success = True
                 result.iterations = iteration + 1
@@ -191,6 +283,27 @@ class AgenticLoop:
                 )
                 result.history = history
                 return result
+
+            if (
+                isinstance(task, MBPPTaskInput)
+                and tests_passed
+                and sandbox_result.final_answer is None
+            ):
+                Logger.info(
+                    "MBPP tests passed but model omitted final_answer; "
+                    "synthesizing final answer from code"
+                )
+                result.final_answer = self._strip_assert_lines(code)
+                result.success = True
+                result.iterations = iteration + 1
+                result.history = history
+                return result
+
+            if isinstance(task, MBPPTaskInput) and not tests_passed:
+                Logger.warning(
+                    "Canonical MBPP tests failed; continuing iteration"
+                )
+                continue
 
             if sandbox_result.error or sandbox_result.stderr:
                 Logger.warning("Error occurred, continuing iteration")
