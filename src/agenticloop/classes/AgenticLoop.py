@@ -31,13 +31,20 @@ class AgenticLoop:
 
     def _extract_code(self, llm_response: LLMResponse) -> Optional[str]:
         if llm_response.code:
+            Logger.debug("Using code already extracted by Model")
             return llm_response.code
 
+        Logger.debug("Model didn't find code, trying fallback extraction in AgenticLoop")
         code_match = re.search(
             r"```python\s+(.*?)\s+```",
             llm_response.raw_content,
             re.DOTALL
         )
+        if code_match:
+            Logger.debug("Fallback extraction found python code block")
+        else:
+            Logger.debug("Fallback extraction failed to find python code block")
+            
         return code_match.group(1).strip() if code_match else None
 
     def _build_context_message(
@@ -117,7 +124,9 @@ class AgenticLoop:
                 )
             except Exception as e:
                 Logger.error(f"LLM call failed: {e}")
-                result.error_message = str(e)
+                result.error_message = f"LLM call failed: {e}"
+                result.success = False
+                result.history = history
                 return result
 
             messages.append({

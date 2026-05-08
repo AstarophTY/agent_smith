@@ -53,18 +53,24 @@ class Model:
             )
 
             full_text = response.choices[0].message.content
+            from logger.classes.Logger import Logger
+            Logger.debug(f"LLM RAW RESPONSE: {full_text}")
             return self._parse_output(full_text)
 
         except Exception as e:
-            return LLMResponse(
-                thought=f"Error when call API: {str(e)}",
-                raw_content=str(e)
-            )
+            # Let the exception propagate to AgenticLoop
+            raise e
 
     def _parse_output(self, text: str) -> LLMResponse:
         import re
+        from logger.classes.Logger import Logger
 
         code_match = re.search(r"```python\s+(.*?)\s+```", text, re.DOTALL)
+        if code_match:
+            Logger.debug("Found python code block")
+        else:
+            Logger.debug("No python code block found with current regex")
+
         code = code_match.group(1).strip() if code_match else None
 
         thought = re.sub(r"```python.*?```", "", text, flags=re.DOTALL).strip()
