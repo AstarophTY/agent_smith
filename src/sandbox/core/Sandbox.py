@@ -1,6 +1,6 @@
 from typing import Any, Dict, Optional
 
-from sandbox.config.SandboxConfig import SandboxConfig
+from models.SandboxConfig import SandboxConfig
 from sandbox.security.SecurityException import SecurityException
 from sandbox.security.ImportAllowlistValidator import ImportAllowlistValidator
 from sandbox.security.AllowedAttributeBases import AllowedAttributeBases
@@ -100,9 +100,11 @@ class Sandbox:
             name = tool.get("name")
             if name:
                 allowed_calls.add(name)
-        allowed_attribute_bases = AllowedAttributeBases.build(())
+        allowed_attribute_bases = AllowedAttributeBases.build(
+            self.config.authorized_imports,
+        )
         validator = ImportAllowlistValidator(
-            (),
+            self.config.authorized_imports,
             allowed_calls=allowed_calls,
             allowed_attribute_bases=allowed_attribute_bases,
         )

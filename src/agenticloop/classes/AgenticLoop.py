@@ -3,7 +3,7 @@ from typing import Optional, Any
 from logger.classes.Logger import Logger
 from agenticloop.classes.Model import Model, LLMResponse
 from sandbox.core.Sandbox import Sandbox
-from sandbox.config.SandboxConfig import SandboxConfig
+from models.SandboxConfig import SandboxConfig
 
 
 class AgenticLoopResult:

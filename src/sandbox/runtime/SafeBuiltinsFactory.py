@@ -1,7 +1,7 @@
 import builtins
 from typing import Any, Dict
 
-from sandbox.config.SandboxConfig import SandboxConfig
+from models.SandboxConfig import SandboxConfig
 
 
 class SafeBuiltinsFactory:

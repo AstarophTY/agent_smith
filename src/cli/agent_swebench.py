@@ -1,4 +1,8 @@
+import json
+
 import typer
+
+from models.SWEBenchTaskInput import SWEBenchTaskInput
 
 
 app = typer.Typer()
@@ -29,9 +33,13 @@ def main(
     """
     Run SWE-bench agent.
     """
+    with open(task_file, "r", encoding="utf-8") as handle:
+        task = SWEBenchTaskInput.model_validate(json.load(handle))
+
     print("Running SWE-bench agent with:")
     print(f"  Task file: {task_file}")
     print(f"  Output: {output}")
     print(f"  Model: {model_name}")
     print(f"  Provider URL: {provider_url}")
+    print(f"  Validated instance ID: {task.instance_id}")
     # TODO: Implement agent logic

@@ -1,4 +1,4 @@
-TEMP_FILE := *.egg-info build dist .pytest_cache .mypy_cache
+TEMP_FILE := dist .pytest_cache .mypy_cache
 MYPY_FLAG := --warn-return-any --warn-unused-ignores --ignore-missing-imports --disallow-untyped-defs --check-untyped-defs
 
 SRC_DIR := src
@@ -18,7 +18,7 @@ install:
 
 clean:
 	$(RM) -rf $(TEMP_FILE)
-	find . -type d -name "__pycache__" -exec rm -rf {} +
+	find . -type d \( -name "__pycache__" -o -name "*.egg-info" -o -name "build" -o -name "dist" \) -exec rm -rf {} +
 	find . -type f -name "*.py[co]" -delete
 
 debug:

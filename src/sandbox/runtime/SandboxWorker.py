@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional
 
 from multiprocessing.connection import Connection
 
-from sandbox.config.SandboxConfig import SandboxConfig
+from models.SandboxConfig import SandboxConfig
 from sandbox.runtime.FinalAnswerSignal import FinalAnswerSignal
 from sandbox.runtime.SafeBuiltinsFactory import SafeBuiltinsFactory
 from sandbox.security.ImportAllowlistValidator import ImportAllowlistValidator
@@ -30,7 +30,10 @@ class SandboxWorker:
             tools (List[Dict[str, Any]]): Tool schema list for MCP wrappers.
             config_data (Dict[str, Any]): Serialized sandbox configuration.
         """
-        config = SandboxConfig(**config_data)
+        if hasattr(SandboxConfig, "model_validate"):
+            config = SandboxConfig.model_validate(config_data)
+        else:
+            config = SandboxConfig.parse_obj(config_data)
         allowed_calls = {
             # Base
             "print",
@@ -75,9 +78,11 @@ class SandboxWorker:
             "final_answer",
             "generate_manual",
         }
-        allowed_attribute_bases = AllowedAttributeBases.build(())
+        allowed_attribute_bases = AllowedAttributeBases.build(
+            config.authorized_imports,
+        )
         validator = ImportAllowlistValidator(
-            (),
+            config.authorized_imports,
             allowed_calls=allowed_calls,
             allowed_attribute_bases=allowed_attribute_bases,
         )

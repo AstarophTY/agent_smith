@@ -1,4 +1,8 @@
+import json
+
 import typer
+
+from models.MBPPTaskInput import MBPPTaskInput
 
 
 app = typer.Typer()
@@ -31,9 +35,13 @@ def main(
     """
     Run MBPP agent.
     """
+    with open(task_file, "r", encoding="utf-8") as handle:
+        task = MBPPTaskInput.model_validate(json.load(handle))
+
     print("Running MBPP agent with:")
     print(f"  Task file: {task_file}")
     print(f"  Output: {output}")
     print(f"  Model: {model_name}")
     print(f"  Provider URL: {provider_url}")
+    print(f"  Validated task ID: {task.task_id}")
     # TODO: Implement agent logic
