@@ -1,6 +1,6 @@
 from typing import Any, Dict, Optional
 
-from sandbox.config.SandboxConfig import SandboxConfig
+from models.SandboxConfig import SandboxConfig
 from sandbox.security.SecurityException import SecurityException
 from sandbox.security.ImportAllowlistValidator import ImportAllowlistValidator
 from sandbox.security.AllowedAttributeBases import AllowedAttributeBases
@@ -15,7 +15,8 @@ class Sandbox:
     def __init__(
         self,
         config: Optional[SandboxConfig] = None,
-        mcp_client: Any = None
+        mcp_client: Any = None,
+        docker_image: Optional[str] = None
     ) -> None:
         """Initialize a sandbox instance.
 
@@ -51,15 +52,60 @@ class Sandbox:
         Returns:
             SandboxResult: Execution result.
         """
-        allowed_calls = {"print", "final_answer", "generate_manual"}
+        allowed_calls = {
+            # Base
+            "print",
+            "input",
+            "len",
+            "range",
+            "enumerate",
+            "zip",
+            "map",
+            "filter",
+            "sorted",
+            "reversed",
+            "sum",
+            "min",
+            "max",
+            "abs",
+            "round",
+            "pow",
+            "divmod",
+            "all",
+            "any",
+
+            # Types / conversion
+            "str",
+            "int",
+            "float",
+            "bool",
+            "list",
+            "dict",
+            "set",
+            "tuple",
+
+            # Inspection
+            "type",
+            "isinstance",
+            "hasattr",
+            "getattr",
+            "setattr",
+            "callable",
+
+            # Custom agent tools
+            "final_answer",
+            "generate_manual",
+        }
         self._refresh_tools()
         for tool in self._tools:
             name = tool.get("name")
             if name:
                 allowed_calls.add(name)
-        allowed_attribute_bases = AllowedAttributeBases.build(())
+        allowed_attribute_bases = AllowedAttributeBases.build(
+            self.config.authorized_imports,
+        )
         validator = ImportAllowlistValidator(
-            (),
+            self.config.authorized_imports,
             allowed_calls=allowed_calls,
             allowed_attribute_bases=allowed_attribute_bases,
         )

@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional
 
 from multiprocessing.connection import Connection
 
-from sandbox.config.SandboxConfig import SandboxConfig
+from models.SandboxConfig import SandboxConfig
 from sandbox.runtime.FinalAnswerSignal import FinalAnswerSignal
 from sandbox.runtime.SafeBuiltinsFactory import SafeBuiltinsFactory
 from sandbox.security.ImportAllowlistValidator import ImportAllowlistValidator
@@ -30,11 +30,59 @@ class SandboxWorker:
             tools (List[Dict[str, Any]]): Tool schema list for MCP wrappers.
             config_data (Dict[str, Any]): Serialized sandbox configuration.
         """
-        config = SandboxConfig(**config_data)
-        allowed_calls = {"print", "final_answer", "generate_manual"}
-        allowed_attribute_bases = AllowedAttributeBases.build(())
+        if hasattr(SandboxConfig, "model_validate"):
+            config = SandboxConfig.model_validate(config_data)
+        else:
+            config = SandboxConfig.parse_obj(config_data)
+        allowed_calls = {
+            # Base
+            "print",
+            "input",
+            "len",
+            "range",
+            "enumerate",
+            "zip",
+            "map",
+            "filter",
+            "sorted",
+            "reversed",
+            "sum",
+            "min",
+            "max",
+            "abs",
+            "round",
+            "pow",
+            "divmod",
+            "all",
+            "any",
+
+            # Types / conversion
+            "str",
+            "int",
+            "float",
+            "bool",
+            "list",
+            "dict",
+            "set",
+            "tuple",
+
+            # Inspection
+            "type",
+            "isinstance",
+            "hasattr",
+            "getattr",
+            "setattr",
+            "callable",
+
+            # Custom agent tools
+            "final_answer",
+            "generate_manual",
+        }
+        allowed_attribute_bases = AllowedAttributeBases.build(
+            config.authorized_imports,
+        )
         validator = ImportAllowlistValidator(
-            (),
+            config.authorized_imports,
             allowed_calls=allowed_calls,
             allowed_attribute_bases=allowed_attribute_bases,
         )
@@ -97,7 +145,9 @@ class SandboxWorker:
                         ),
                     )
                     exec(
-                        compile(code, "<sandbox>", "exec"), globals_dict,
+                        compile(
+                            code, "<sandbox>", "exec", optimize=0
+                        ), globals_dict,
                         None
                     )
                 control_pipe.send({

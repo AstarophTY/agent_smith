@@ -129,8 +129,15 @@ class McpToolsSweBench:
         return result["stdout"]
 
     def run_tests(self) -> dict[str, str]:
-        """Run the test suite using the agent-smith-test.sh script."""
-        return self.run_command("sh agent-smith-test.sh", ".")
+        """
+        Run the test suite using the agent-smith-test.sh script.
+
+        Returns:
+            A string containing the test results
+        """
+        r = self.run_command("sh agent-smith-test.sh", ".")
+        print(r)
+        return r
 
     @staticmethod
     def _payload(node: ast.AST, kind: str, name: str) -> Symbol:

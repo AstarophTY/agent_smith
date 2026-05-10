@@ -150,7 +150,7 @@ class LocalToolsClient:
         return self._tools[name](**arguments)
 
 
-def _load_tools_module(path: str) -> ModuleType:
+def load_tools_module(path: str) -> ModuleType:
     spec = importlib.util.spec_from_file_location("tools_module", path)
     if not spec or not spec.loader:
         raise RuntimeError(f"Unable to load tools module from {path}")
@@ -250,7 +250,7 @@ def main(argv: Optional[list[str]] = None) -> None:
             pass
 
         tools_module = args.mcp_stdio.replace("python ", "").strip()
-        module = _load_tools_module(tools_module)
+        module = load_tools_module(tools_module)
         containerizer = Containerizer()
         containerizer.up()
         try:

@@ -11,6 +11,7 @@ dependencies = [
     "flake8>=7.3.0",
     "mcp>=1.22.0",
     "mypy>=1.20.2",
+    "openai>=2.36.0",
     "typer>=0.25.1",
     "types-authlib>=1.6.11.20260418",
     "types-docker>=7.1.0.20260409",
