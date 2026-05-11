@@ -130,9 +130,11 @@ print(result)
 ```
 
 ## Interpreting run_tests()
-run_tests() returns: {{"stdout": str, "stderr": str, "exit_code": int}}
-- exit_code == 0: all tests PASS — ready to submit
-- exit_code != 0: tests FAIL — read stdout/stderr to find which test failed
+run_tests() returns: {{"stdout": str, "stderr": str, "exit_code": int, "passed": bool, "summary": str}}
+- passed == True: all tests PASS — ready to submit
+- passed == False: tests FAIL — read stdout/stderr to find which test failed
+- NEVER rely on exit_code alone; the eval script may print "Test failed" yet exit 0.
+  Always check the "passed" boolean and the "summary" field.
 
 ## Submitting the solution
 ```python
@@ -241,7 +243,48 @@ class AgenticLoop:
             llm_response.raw_content,
             re.DOTALL,
         )
-        return code_match.group(1).strip() if code_match else None
+        if code_match:
+            return code_match.group(1).strip()
+        return self._xml_calls_to_python(llm_response.raw_content)
+
+    def _xml_calls_to_python(self, text: str) -> Optional[str]:
+        """Convert Mistral-style XML function calls into equivalent Python.
+
+        Pattern: <function=NAME> <parameter=KEY>VALUE</parameter>... </function>
+        Mistral and some other models emit this format natively when they're
+        trained on XML tool-calling — even after a prompt asks for Python.
+        Rather than dropping the response, we translate it.
+        """
+        func_pattern = re.compile(
+            r"<function=([\w_]+)>\s*(.*?)\s*</function>",
+            re.DOTALL,
+        )
+        param_pattern = re.compile(
+            r"<parameter=([\w_]+)>\s*(.*?)\s*</parameter>",
+            re.DOTALL,
+        )
+        lines: list[str] = []
+        for func_name, body in func_pattern.findall(text):
+            params: list[str] = []
+            for key, value in param_pattern.findall(body):
+                value = value.strip()
+                if re.fullmatch(r"-?\d+", value):
+                    params.append(f"{key}={value}")
+                elif re.fullmatch(r"-?\d+\.\d+", value):
+                    params.append(f"{key}={value}")
+                elif value in ("True", "False", "None"):
+                    params.append(f"{key}={value}")
+                else:
+                    params.append(f"{key}={value!r}")
+            args = ", ".join(params)
+            if func_name == "final_answer":
+                lines.append(f"{func_name}({args})")
+            else:
+                lines.append(f"result = {func_name}({args})")
+                lines.append("print(result)")
+        if not lines:
+            return None
+        return "\n".join(lines)
 
     def _build_mbpp_test_code(
         self, task: MBPPTaskInput, candidate_code: str
@@ -372,7 +415,10 @@ class AgenticLoop:
         _ = initial_code  # reserved for future use
         result = AgenticLoopResult()
         history: list[dict[str, Any]] = []
-        messages: list[dict[str, str]] = []
+        # Cache: normalized_code -> (observation, run_count). Reused when
+        # the agent issues an identical call, but invalidated whenever a
+        # state-changing call (edit_file/run_tests/run_command) is made.
+        exec_cache: dict[str, tuple[str, int]] = {}
         start_time = time.time()
 
         system_prompt = self._build_system_prompt(task)
@@ -432,8 +478,11 @@ class AgenticLoop:
             if history:
                 context_parts.append("\nPrevious steps:")
                 for i, entry in enumerate(history[-5:], 1):
+                    thought = entry.get("thought", "")
+                    if thought:
+                        context_parts.append(f"\nStep {i} thought:\n{thought}")
                     context_parts.append(
-                        f"\nStep {i} code:\n{entry.get('code', '')}"
+                        f"Step {i} code:\n{entry.get('code', '')}"
                     )
                     obs = entry.get("observation", "")
                     if obs:
@@ -444,7 +493,6 @@ class AgenticLoop:
             try:
                 llm_response = await self.model.get_next_step(
                     context_message,
-                    history=messages,
                     system_prompt=system_prompt,
                 )
             except Exception as e:
@@ -455,11 +503,6 @@ class AgenticLoop:
             result.total_input_tokens += llm_response.input_tokens
             result.total_output_tokens += llm_response.output_tokens
             result.total_requests += 1
-
-            messages.append({"role": "user", "content": context_message})
-            messages.append(
-                {"role": "assistant", "content": llm_response.raw_content}
-            )
 
             code = self._extract_code(llm_response)
 
@@ -475,11 +518,72 @@ class AgenticLoop:
                 result.steps.append(
                     self._make_step(iteration, llm_response, "", obs)
                 )
-                history.append({"code": None, "observation": obs})
+                history.append({
+                    "thought": llm_response.thought,
+                    "code": None,
+                    "observation": obs,
+                })
                 continue
 
             Logger.info(f"Code:\n{self._boxed_text(code)}")
             result.final_code = code
+
+            normalized = " ".join(code.split())
+            mutates_state = any(
+                tok in normalized
+                for tok in (
+                    "edit_file(",
+                    "run_tests(",
+                    "run_command(",
+                    "final_answer(",
+                )
+            )
+            if mutates_state:
+                exec_cache.clear()
+
+            cached = exec_cache.get(normalized)
+            if cached is not None:
+                prev_obs, prev_count = cached
+                new_count = prev_count + 1
+                exec_cache[normalized] = (prev_obs, new_count)
+                Logger.warning(
+                    f"Cache hit: identical call run {new_count} times, "
+                    f"skipping sandbox and reusing previous result"
+                )
+                if new_count >= 3:
+                    obs = (
+                        f"[SYSTEM] You ran this exact code {new_count} "
+                        f"times. The result is deterministic — re-calling "
+                        f"is wasted compute. Stopping the agent."
+                    )
+                    result.steps.append(
+                        self._make_step(iteration, llm_response, code, obs)
+                    )
+                    history.append({
+                        "thought": llm_response.thought,
+                        "code": code,
+                        "observation": obs,
+                    })
+                    result.error_message = (
+                        f"Loop detected: same call repeated {new_count} times"
+                    )
+                    break
+                obs = (
+                    f"[SYSTEM] Duplicate call — you already ran this exact "
+                    f"code {prev_count} time(s). Returning the previous "
+                    f"observation as-is (no re-execution). Use this result "
+                    f"and try a different action.\n\n"
+                    f"Previous observation:\n{prev_obs}"
+                )
+                result.steps.append(
+                    self._make_step(iteration, llm_response, code, obs)
+                )
+                history.append({
+                    "thought": llm_response.thought,
+                    "code": code,
+                    "observation": obs,
+                })
+                continue
 
             try:
                 sandbox_result = self.sandbox.execute(code)
@@ -489,7 +593,11 @@ class AgenticLoop:
                 result.steps.append(
                     self._make_step(iteration, llm_response, code, obs)
                 )
-                history.append({"code": code, "observation": obs})
+                history.append({
+                    "thought": llm_response.thought,
+                    "code": code,
+                    "observation": obs,
+                })
                 continue
 
             # Run canonical MBPP tests to verify correctness independently
@@ -538,7 +646,13 @@ class AgenticLoop:
             result.steps.append(
                 self._make_step(iteration, llm_response, code, obs)
             )
-            history.append({"code": code, "observation": obs})
+            history.append({
+                "thought": llm_response.thought,
+                "code": code,
+                "observation": obs,
+            })
+            if not mutates_state:
+                exec_cache[normalized] = (obs, 1)
 
             canonical_ok = (
                 canonical_tests_ran

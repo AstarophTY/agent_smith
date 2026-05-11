@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import sys
+from typing import Optional
 
 import typer
 from dotenv import load_dotenv
@@ -54,8 +55,8 @@ def _build_solution(
 
 async def _run(
     task: MBPPTaskInput,
-    model_name: str,
-    provider_url: str,
+    model_name: Optional[str],
+    provider_url: Optional[str],
 ) -> AgenticLoopResult:
     async with AgenticLoop(
         max_iterations=10,
@@ -75,11 +76,11 @@ def main(
     output: str = typer.Option(
         ..., "--output", help="Path to the output JSON file"
     ),
-    model_name: str = typer.Option(
-        ..., "--model-name", help="LLM model identifier"
+    model_name: Optional[str] = typer.Option(
+        None, "--model-name", help="LLM model identifier (defaults to LLM_MODEL env)"
     ),
-    provider_url: str = typer.Option(
-        ..., "--provider-url", help="LLM API base URL"
+    provider_url: Optional[str] = typer.Option(
+        None, "--provider-url", help="LLM API base URL (defaults to LLM_BASE_URL env)"
     ),
 ) -> None:
     """Run the MBPP agent on a single task."""
@@ -93,6 +94,16 @@ def main(
         Logger.setup("mbpp", task_id_str)
     except Exception:
         pass
+
+    model_name = model_name or os.getenv("LLM_MODEL")
+    provider_url = provider_url or os.getenv("LLM_BASE_URL")
+    if not model_name or not provider_url:
+        print(
+            "Error: --model-name/--provider-url not given and "
+            "LLM_MODEL/LLM_BASE_URL not set in environment",
+            file=sys.stderr,
+        )
+        sys.exit(2)
 
     os.environ["LLM_MODEL"] = model_name
     os.environ["LLM_BASE_URL"] = provider_url

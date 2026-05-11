@@ -70,12 +70,24 @@ class SandboxSession:
                 self._sandbox.mcp_client is not None
                 and self._tool_parent.poll(0.05)
             ):
-                message = self._tool_parent.recv()
+                try:
+                    message = self._tool_parent.recv()
+                except EOFError:
+                    timed_out = True
+                    self._process.terminate()
+                    break
                 if message.get("type") == "tool_call":
                     response = self._sandbox._handle_tool_call(message)
                     self._tool_parent.send(response)
             if self._control_parent.poll(0.05):
-                result_data = self._control_parent.recv()
+                try:
+                    result_data = self._control_parent.recv()
+                except EOFError:
+                    # Worker died (e.g. RLIMIT_CPU SIGXCPU, MemoryError on
+                    # send, etc.) — treat as a timeout/OOM rather than crash.
+                    timed_out = True
+                    self._process.terminate()
+                    break
                 break
             if (
                 time.monotonic() - start_time
@@ -83,6 +95,11 @@ class SandboxSession:
             ):
                 timed_out = True
                 self._process.terminate()
+                break
+            if not self._process.is_alive():
+                # Worker exited without sending a result (killed by RLIMIT_*
+                # or crashed). Surface as a timeout for the caller.
+                timed_out = True
                 break
 
         if timed_out and not result_data.get("error"):

@@ -73,7 +73,6 @@ class McpToolsMbpp:
             if passed:
                 summary = f"PASSED ({len(test_list)} tests)"
             else:
-                # Extract the failing assertion from stderr if possible
                 first_error = proc.stderr.strip().splitlines()[-1] if proc.stderr.strip() else "unknown error"
                 summary = f"FAILED: {first_error}"
             return {

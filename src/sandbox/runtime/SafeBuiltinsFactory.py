@@ -19,6 +19,8 @@ class SafeBuiltinsFactory:
         """
         _ = config
         return {
+            "__import__": builtins.__import__,
+            "__build_class__": builtins.__build_class__,
             "print": builtins.print,
             "input": builtins.input,
             "len": builtins.len,

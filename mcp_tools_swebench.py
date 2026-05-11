@@ -47,6 +47,21 @@ class McpToolsSweBench:
         if not self.containerizer:
             raise RuntimeError("Containerizer is not initialized.")
 
+        try:
+            start_line = int(start_line)
+            end_line = int(end_line)
+        except (TypeError, ValueError):
+            return (
+                f"[ERROR] read_file expects integer line numbers, got "
+                f"start_line={start_line!r} end_line={end_line!r}. "
+                "Pass integers without quotes."
+            )
+        if start_line < 1 or end_line < start_line:
+            return (
+                f"[ERROR] Invalid range start_line={start_line} "
+                f"end_line={end_line}. Must satisfy 1 <= start <= end."
+            )
+
         cmd = f"sed -n '{start_line},{end_line}p' {shlex.quote(filepath)}"
         result = self.containerizer.cmd(cmd)
         if result.get("exit_code", 0) != 0 and result.get("stderr"):
@@ -165,19 +180,47 @@ class McpToolsSweBench:
     def run_tests(self) -> dict[str, Any]:
         """Run the evaluation test suite (agent-smith-test.sh).
 
-        Returns:
-            A dict with stdout, stderr, exit_code, and a summary field.
-            exit_code == 0 means ALL tests passed.
-            exit_code != 0 means at least one test failed — read stdout/stderr.
+        Returns a dict with stdout, stderr, exit_code, passed (bool), summary.
+        Detects Django unittest, pytest, and generic 'Test passed/failed'
+        formats. Never trusts exit_code alone because SWE-bench eval scripts
+        often exit 0 even when tests fail, and never trusts a lone 'OK'
+        because Django prints 'OK' for every migration step.
         """
+        import re
+
         result = self.run_command("bash agent-smith-test.sh", "/testbed")
         exit_code = result.get("exit_code", -1)
-        if exit_code == 0:
-            result["summary"] = "ALL TESTS PASSED (exit_code=0)"
+        stdout = result.get("stdout", "") or ""
+        stderr = result.get("stderr", "") or ""
+        combined = f"{stdout}\n{stderr}"
+
+        django_pass = re.search(r"Ran \d+ tests? in [\d.]+s\s*\nOK\b", combined)
+        django_fail = re.search(r"Ran \d+ tests? in [\d.]+s\s*\nFAILED", combined)
+        pytest_pass = re.search(r"=+\s*\d+ passed.*in [\d.]+s", combined)
+        pytest_fail = re.search(r"\d+ failed", combined)
+        has_traceback = "Traceback (most recent call last)" in combined
+        placeholder_fail = re.search(r"^Test failed\s*$", combined, re.MULTILINE)
+        placeholder_pass = re.search(r"^Test passed\s*$", combined, re.MULTILINE)
+
+        if django_fail or pytest_fail or placeholder_fail or has_traceback:
+            passed = False
+            reason = "test runner reported failures"
+        elif django_pass or pytest_pass or placeholder_pass:
+            passed = True
+            reason = "test runner reported all passing"
+        elif exit_code != 0:
+            passed = False
+            reason = f"non-zero exit_code={exit_code} and no test summary found"
+        else:
+            passed = False
+            reason = "no Django/pytest summary found — cannot confirm success"
+
+        result["passed"] = passed
+        if passed:
+            result["summary"] = f"ALL TESTS PASSED ({reason})"
         else:
             result["summary"] = (
-                f"TESTS FAILED (exit_code={exit_code}) — "
-                "read stdout/stderr for details"
+                f"TESTS FAILED ({reason}) — read stdout/stderr for details"
             )
         return result
 

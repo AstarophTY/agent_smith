@@ -4,6 +4,7 @@ import time
 from typing import List, Optional
 
 from dotenv import load_dotenv
+import httpx
 from openai import AsyncOpenAI, RateLimitError, APITimeoutError, APIConnectionError
 from pydantic import BaseModel
 
@@ -54,7 +55,11 @@ class Model:
 
     def _make_client(self) -> AsyncOpenAI:
         key = self._api_keys[self._key_index % len(self._api_keys)]
-        return AsyncOpenAI(api_key=key, base_url=self.base_url)
+        return AsyncOpenAI(
+            api_key=key,
+            base_url=self.base_url,
+            timeout=httpx.Timeout(connect=30.0, read=180.0, write=30.0, pool=30.0),
+        )
 
     def _rotate_key(self) -> None:
         self._key_index += 1
@@ -139,7 +144,7 @@ class Model:
                 retries += 1
                 wait_time = min(10 * retries, 60)
                 Logger.warning(
-                    f"Connection error (attempt {retries}/{max_retries}): {e}. "
+                    f"Connection error (attempt {retries}/{max_retries}): {e} "
                     f"Retrying in {wait_time}s..."
                 )
                 await asyncio.sleep(wait_time)
