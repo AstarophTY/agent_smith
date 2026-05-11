@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c ' *)",
+      "Bash(python3 -c \"import json; d=json.load\\(open\\('/tmp/test_agent_out.json'\\)\\); print\\('Success:', d['success']\\); print\\('Solution:', repr\\(d['solution']\\)\\); print\\('Iterations:', d['iterations']\\); print\\('Error:', d.get\\('error'\\)\\)\")"
+    ]
+  }
+}
