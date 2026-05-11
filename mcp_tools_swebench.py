@@ -148,34 +148,68 @@ class McpToolsSweBench:
         result = self.containerizer.cmd(cmd)
         return result["stdout"].splitlines()
 
+    _SEARCH_EXCLUDE_DIRS = (
+        ".git",
+        "__pycache__",
+        ".venv",
+        "venv",
+        "node_modules",
+        ".tox",
+        ".mypy_cache",
+        ".pytest_cache",
+        "build",
+        "dist",
+        ".eggs",
+    )
+    _SEARCH_MAX_LINES = 100
+    _SEARCH_MAX_PER_FILE = 20
+
     def search_code(self, pattern: str, file_pattern: str = "*.py") -> str:
         """Search for a regex pattern in files matching file_pattern.
 
         Searches from /testbed by default. Results are returned in format:
-        /absolute/path/to/file.py:<line_number> <line_content>
+        /absolute/path/to/file.py:<line_number>:<line_content>
 
         Args:
             pattern: A regex pattern to search for.
             file_pattern: A glob pattern to filter files (default: *.py).
 
         Returns:
-            Matching lines in format '/path/to/file.py:<line> <content>'.
+            Matching lines in format '/path/to/file.py:<line>:<content>'.
             Returns a message if no matches are found.
         """
         if not self.containerizer:
             raise RuntimeError("Containerizer is not initialized.")
 
-        include_flag = f"--include={shlex.quote(file_pattern)}" if file_pattern else ""
+        parts = [
+            "grep",
+            "-rnEI",
+            "--color=never",
+            f"-m {self._SEARCH_MAX_PER_FILE}",
+        ]
+        parts.extend(f"--exclude-dir={d}" for d in self._SEARCH_EXCLUDE_DIRS)
+        if file_pattern:
+            parts.append(f"--include={shlex.quote(file_pattern)}")
+        parts.append(shlex.quote(pattern))
+        parts.append("/testbed")
+        # head -N+1 lets us detect truncation without a second pass.
         grep_cmd = (
-            f"grep -rnE {shlex.quote(pattern)} /testbed {include_flag} 2>/dev/null"
-            f" | head -100"
+            " ".join(parts)
+            + f" 2>/dev/null | head -{self._SEARCH_MAX_LINES + 1}"
         )
 
-        result = self.containerizer.cmd(grep_cmd)
-        output = result["stdout"].strip()
-        if not output:
+        output = self.containerizer.cmd(grep_cmd)["stdout"]
+        if not output.strip():
             return f"[INFO] No matches found for pattern '{pattern}' in /testbed."
-        return output
+
+        lines = output.splitlines()
+        if len(lines) > self._SEARCH_MAX_LINES:
+            kept = "\n".join(lines[: self._SEARCH_MAX_LINES])
+            return (
+                f"{kept}\n[INFO] Output truncated at {self._SEARCH_MAX_LINES} lines. "
+                "Refine the pattern or file_pattern for narrower results."
+            )
+        return "\n".join(lines)
 
     def run_tests(self) -> dict[str, Any]:
         """Run the evaluation test suite (agent-smith-test.sh).
