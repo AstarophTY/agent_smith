@@ -27,13 +27,19 @@ You are Agent Smith, an autonomous Python coding agent.
 Implement a Python function that passes all provided tests.
 
 ## Available Tools
-- run_tests(code, test_list, test_imports): Runs your implementation against tests.
-  - code: your complete function as a string (can include imports at the top)
-  - test_list: list of assert strings (e.g. ["assert f(1) == 2", "assert f(0) == 0"])
-  - test_imports: list of extra import lines needed by the tests (e.g. ["import math"])
-  Returns: {"stdout": str, "stderr": str, "exit_code": int, "success": bool}
+- run_tests(code, test_list, test_imports): Runs your implementation
+    against tests.
+    - code: your complete function as a string
+        (can include imports at the top)
+    - test_list: list of assert strings
+        (e.g. ["assert f(1) == 2", "assert f(0) == 0"])
+    - test_imports: list of extra import lines needed by the tests
+        (e.g. ["import math"])
+    Returns: {"stdout": str, "stderr": str, "exit_code": int,
+    "success": bool}
   (The result is also printed automatically).
-  success=True means ALL assertions passed. stderr shows the traceback on failure.
+    success=True means ALL assertions passed. stderr shows the traceback
+    on failure.
 - final_answer(code): Submit solution and stop. Pass ONLY the function string.
 
 ## Workflow (follow exactly)
@@ -54,7 +60,8 @@ Thought: <brief reasoning about the approach>
 CRITICAL: Your response MUST contain exactly one Python code block.
 Do NOT include any conversational text or "Thought:" inside the code block.
 
-NOTE: All tools automatically print their results. You don't need to use print() on tool calls.
+NOTE: All tools automatically print their results. You don't need to use
+print() on tool calls.
 
 ## Pattern to follow every iteration
 ```python
@@ -100,28 +107,34 @@ else:
 ```
 
 ## Rules
-- ALWAYS respond with a Python code block (```python ... ```) containing your next action
+- ALWAYS respond with a Python code block (```python ... ```)
+    containing your next action
 - Use triple-quoted strings for multi-line functions in the code variable
-- ALWAYS call run_tests before final_answer — never submit without verifying
-- If the function needs imports (math, re, etc.), include them INSIDE the code string
+- ALWAYS call run_tests before final_answer — never submit without
+    verifying
+- If the function needs imports (math, re, etc.), include them INSIDE the
+    code string
 - Copy the exact test strings from the task into test_list
 - Do NOT call final_answer until run_tests shows success=True
 - If stuck after 3 iterations, reconsider the approach entirely
 """
 
 SWEBENCH_SYSTEM_PROMPT_TEMPLATE = """\
-You are Agent Smith, an autonomous software engineering agent fixing bugs in real Python repositories.
+You are Agent Smith, an autonomous software engineering agent fixing bugs
+in real Python repositories.
 
 ## Available Tools
 {tool_docs}
 
 ## Debugging Methodology
 1. READ the problem statement carefully — understand what is broken
-2. SEARCH for relevant code: search_code(), search_function_or_class_definition_in_code()
+2. SEARCH for relevant code: search_code(),
+   search_function_or_class_definition_in_code()
 3. READ the relevant files: read_file() to understand context around the bug
 4. UNDERSTAND the root cause before touching any file
 5. EDIT minimally: edit_file() — change only what is necessary
-6. TEST: run_tests() — check if tests pass (exit_code=0 means pass)
+6. TEST: run_tests() — check if tests pass
+    (exit_code=0 means pass)
 7. ITERATE: if tests still fail, re-examine the edit and fix
 8. SUBMIT: patch = get_patch() then final_answer(patch)
 
@@ -134,14 +147,16 @@ Thought: <your reasoning about what to do next>
 CRITICAL: Your response MUST contain exactly one Python code block.
 Do NOT include any conversational text or "Thought:" inside the code block.
 
-NOTE: All tools automatically print their results. You don't need to use print() on tool calls.
+NOTE: All tools automatically print their results. You don't need to use
+print() on tool calls.
 
 ## Interpreting run_tests()
-run_tests() returns: {{"stdout": str, "stderr": str, "exit_code": int, "passed": bool, "summary": str}}
+run_tests() returns: {{"stdout": str, "stderr": str, "exit_code": int,
+"passed": bool, "summary": str}}
 - passed == True: all tests PASS — ready to submit
 - passed == False: tests FAIL — read stdout/stderr to find which test failed
-- NEVER rely on exit_code alone; the eval script may print "Test failed" yet exit 0.
-  Always check the "passed" boolean and the "summary" field.
+- NEVER rely on exit_code alone; the eval script may print "Test failed"
+    yet exit 0. Always check the "passed" boolean and the "summary" field.
 
 ## Submitting the solution
 ```python
@@ -150,11 +165,14 @@ final_answer(patch)
 ```
 
 ## Critical Rules
-- ALWAYS respond with a Python code block (```python ... ```) containing your next action
-- NEVER submit without running tests first (run_tests, check exit_code == 0)
+- ALWAYS respond with a Python code block (```python ... ```)
+    containing your next action
+- NEVER submit without running tests first
+    (run_tests, check exit_code == 0)
 - Make targeted, minimal edits — do not refactor unrelated code
 - Do NOT access external URLs or look up PR/issue solutions
-- Always verify with read_file after edit_file to confirm the change is correct
+- Always verify with read_file after edit_file to confirm the change is
+    correct
 - The repository is at /testbed — all file paths start with /testbed/
 """
 
@@ -209,7 +227,8 @@ class AgenticLoop:
                 config=sandbox_config, mcp_client=self.mcp_client
             )
         elif tool_module is not None:
-            # MBPP and other non-docker tasks still need MCP tools (e.g. run_tests)
+            # MBPP and other non-docker tasks still need MCP tools
+            # (e.g. run_tests).
             self.mcp_client = LocalToolsClient(tool_module)
             self.sandbox = Sandbox(
                 config=sandbox_config, mcp_client=self.mcp_client
@@ -240,9 +259,14 @@ class AgenticLoop:
                 f"{k}: {v.get('type', 'str')}"
                 for k, v in props.items()
             )
-            lines.append(f"- {name}({params}): {description}")
+            line_text = (
+                f"- {name}({params}): "
+                f"{description}"
+            )
+            lines.append(line_text)
         lines.append(
-            "- final_answer(answer): Submit the final solution (patch string) and stop"
+            "- final_answer(answer): Submit the final solution (patch string) "
+            "and stop"
         )
         return "\n".join(lines)
 
@@ -262,7 +286,8 @@ class AgenticLoop:
                 code = self._xml_calls_to_python(llm_response.raw_content)
 
         if code:
-            # Clean up the code block if the LLM included its thought process inside it
+            # Clean up the code block if the LLM included its thought
+            # process inside it.
             lines = code.splitlines()
             cleaned_lines: list[str] = []
             for line in lines:
@@ -270,11 +295,18 @@ class AgenticLoop:
                 # Skip empty lines at the beginning
                 if not cleaned_lines and not stripped:
                     continue
-                # Skip conversational markers or thoughts leaking into code block
+                # Skip conversational markers or thoughts leaking into code
+                # block.
                 if stripped.startswith("Thought:"):
                     continue
                 if stripped.lower().startswith(
-                    ("let me", "i will", "i'll", "i'm going to", "the fix is")
+                    (
+                        "let me",
+                        "i will",
+                        "i'll",
+                        "i'm going to",
+                        "the fix is",
+                    )
                 ):
                     continue
 
@@ -292,7 +324,8 @@ class AgenticLoop:
     def _xml_calls_to_python(self, text: str) -> Optional[str]:
         """Convert Mistral-style XML function calls into equivalent Python.
 
-        Pattern: <function=NAME> <parameter=KEY>VALUE</parameter>... </function>
+        Pattern: <function=NAME> <parameter=KEY>VALUE</parameter>...
+        </function>
         Mistral and some other models emit this format natively when they're
         trained on XML tool-calling — even after a prompt asks for Python.
         Rather than dropping the response, we translate it.
@@ -377,7 +410,10 @@ class AgenticLoop:
         inner_width = max_width
         top = "┌" + ("─" * (inner_width + 2)) + "┐"
         bottom = "└" + ("─" * (inner_width + 2)) + "┘"
-        body = [f"│ {line.ljust(inner_width)} │" for line in trimmed]
+        body = [
+            f"│ {line.ljust(inner_width)} │"
+            for line in trimmed
+        ]
         return "\n".join([top, *body, bottom])
 
     def _build_observation(
@@ -396,15 +432,18 @@ class AgenticLoop:
             return (
                 "[SYSTEM] No valid Python code block found in your response.\n"
                 "Please include your code inside ```python ... ``` markers.\n"
-                "Follow the response format exactly as shown in the instructions.\n"
-                "If you've already tried something that didn't work, try a different approach."
+                "Follow the response format exactly as shown in the "
+                "instructions.\n"
+                "If you've already tried something that didn't work, try a "
+                "different approach."
             )
 
         parts: list[str] = []
 
         if timed_out:
             parts.append(
-                "[SYSTEM] Sandbox execution timed out. Output so far (partial):"
+                "[SYSTEM] Sandbox execution timed out. Output so far "
+                "(partial):"
             )
 
         if sandbox_stdout:
@@ -426,7 +465,9 @@ class AgenticLoop:
                 parts.append(f"Test stderr:\n{tests_stderr}")
 
         if not parts:
-            parts.append("(no output — code executed successfully with no output)")
+            parts.append(
+                "(no output — code executed successfully with no output)"
+            )
 
         return "\n".join(parts)
 
@@ -501,7 +542,10 @@ class AgenticLoop:
             if task.hints_text:
                 task_str += f"\n\nHints:\n{task.hints_text}"
             if task.repo:
-                task_str += f"\n\nRepository: {task.repo} (mounted at /testbed)"
+                task_str += (
+                    f"\n\nRepository: {task.repo} "
+                    "(mounted at /testbed)"
+                )
 
         try:
             for iteration in range(self.max_iterations):
@@ -525,7 +569,9 @@ class AgenticLoop:
                     for i, entry in enumerate(history[-5:], 1):
                         thought = entry.get("thought", "")
                         if thought:
-                            context_parts.append(f"\nStep {i} thought:\n{thought}")
+                            context_parts.append(
+                                f"\nStep {i} thought:\n{thought}"
+                            )
                         context_parts.append(
                             f"Step {i} code:\n{entry.get('code', '')}"
                         )
@@ -535,11 +581,14 @@ class AgenticLoop:
 
                 if history and not history[-1].get("code"):
                     context_parts.append(
-                        "\nIMPORTANT: Your previous response did not contain a valid Python code block. "
-                        "You MUST provide your next action as a Python code block using the tools available. "
-                        "Do NOT include your 'Thought:' or any conversational text inside the code block. "
-                        "Your response must contain EXACTLY ONE code block (```python ... ```). "
-                        "If you are stuck or your previous action failed, try a DIFFERENT approach."
+                        "\nIMPORTANT: Your previous response did not contain "
+                        "a valid Python code block. You MUST provide your "
+                        "next action as a Python code block using the tools "
+                        "available. Do NOT include your 'Thought:' or any "
+                        "conversational text inside the code block. Your "
+                        "response must contain EXACTLY ONE code block "
+                        "(```python ... ```). If you are stuck or your "
+                        "previous action failed, try a DIFFERENT approach."
                     )
 
                 context_message = "\n".join(context_parts)
@@ -603,25 +652,27 @@ class AgenticLoop:
                     exec_cache[normalized] = (prev_obs, new_count)
                     Logger.warning(
                         f"Cache hit: identical call run {new_count} times, "
-                        f"skipping sandbox and reusing previous result"
+                        "skipping sandbox and reusing previous result"
                     )
                     if new_count >= 3:
                         obs = (
                             f"[SYSTEM] You ran this exact code {new_count} "
-                            f"times. The result is deterministic — re-calling "
-                            f"is wasted compute. "
-                            f"You MUST change your strategy or parameters."
+                            "times. The result is deterministic — re-calling "
+                            "is wasted compute. You MUST change your strategy "
+                            "or parameters."
                         )
                         Logger.warning(
-                            f"Forcing strategy change after {new_count} repetitions"
+                            "Forcing strategy change after "
+                            f"{new_count} repetitions"
                         )
                     else:
                         obs = (
-                            f"[SYSTEM] Duplicate call — you already ran this exact "
-                            f"code {prev_count} time(s). Returning the previous "
-                            f"observation as-is (no re-execution). "
-                            f"IMPORTANT: Repeating the same call will NOT change the result. "
-                            f"Use this result and try a DIFFERENT action or change your approach.\n\n"
+                            "[SYSTEM] Duplicate call — you already ran this "
+                            f"exact code {prev_count} time(s). Returning the "
+                            "previous observation as-is (no re-execution). "
+                            "IMPORTANT: Repeating the same call will NOT "
+                            "change the result. Use this result and try a "
+                            "DIFFERENT action or change your approach.\n\n"
                             f"Previous observation:\n{prev_obs}"
                         )
                     result.steps.append(
@@ -660,12 +711,16 @@ class AgenticLoop:
 
                 if not sandbox_result.error:
                     normalized = " ".join(code.split())
-                    exec_cache[normalized] = (sandbox_result.stdout + sandbox_result.stderr, 1)
+                    exec_cache[normalized] = (
+                        sandbox_result.stdout + sandbox_result.stderr,
+                        1,
+                    )
 
                 if is_mbpp and not sandbox_result.error:
                     assert isinstance(task, MBPPTaskInput)
                     # Prefer the final_answer string as code to test (cleaner),
-                    # fall back to stripping asserts from the sandbox code block.
+                    # fall back to stripping asserts from the sandbox code
+                    # block.
                     code_to_test = (
                         sandbox_result.final_answer
                         if sandbox_result.final_answer is not None
@@ -680,10 +735,14 @@ class AgenticLoop:
                     canonical_tests_ran = True
                     # Tests pass when there is no exception and no timeout.
                     # Stderr may contain harmless warnings — do NOT fail on it.
-                    tests_passed_val = not tests_error and not tests_timed_out
+                    tests_passed_val = (
+                        not tests_error and not tests_timed_out
+                    )
                     tests_passed_flag = tests_passed_val
                     if tests_error:
-                        Logger.warning(f"Canonical tests failed: {tests_error}")
+                        Logger.warning(
+                            f"Canonical tests failed: {tests_error}"
+                        )
                     else:
                         Logger.info("Canonical tests passed")
 
@@ -695,7 +754,9 @@ class AgenticLoop:
                     tests_error=tests_error,
                     tests_stderr=tests_stderr,
                     tests_timed_out=tests_timed_out,
-                    tests_passed=tests_passed_flag if canonical_tests_ran else None,
+                    tests_passed=(
+                        tests_passed_flag if canonical_tests_ran else None
+                    ),
                 )
 
                 result.steps.append(
@@ -724,14 +785,17 @@ class AgenticLoop:
                         break
                     else:
                         Logger.warning(
-                            "final_answer called but canonical tests failed; continuing"
+                            "final_answer called but canonical tests failed; "
+                            "continuing"
                         )
                         continue
 
-                # Auto-succeed when canonical tests pass (no explicit final_answer needed)
+                # Auto-succeed when canonical tests pass (no explicit
+                # final_answer needed)
                 if is_mbpp and canonical_ok:
                     Logger.info(
-                        "Canonical tests passed; extracting final answer from code"
+                        "Canonical tests passed; extracting final answer "
+                        "from code"
                     )
                     code_to_test = self._strip_assert_lines(code)
                     result.final_answer = code_to_test

@@ -5,7 +5,12 @@ from typing import List, Optional
 
 from dotenv import load_dotenv
 import httpx
-from openai import AsyncOpenAI, RateLimitError, APITimeoutError, APIConnectionError
+from openai import (
+    AsyncOpenAI,
+    RateLimitError,
+    APITimeoutError,
+    APIConnectionError,
+)
 from openai.types.chat import ChatCompletionMessageParam
 
 from agenticloop.classes.LLMResponse import LLMResponse
@@ -19,18 +24,22 @@ class Model:
         base_url: Optional[str] = None,
     ):
         load_dotenv()
-        self.base_url: str = base_url or os.getenv(
-            "LLM_BASE_URL", "https://openrouter.ai/api/v1"
-        ) or ""
-        self.model_name: str = model_name or os.getenv(
-            "LLM_MODEL", "google/gemini-2.0-flash-001"
-        ) or ""
+        self.base_url: str = (
+            base_url
+            or os.getenv("LLM_BASE_URL", "https://openrouter.ai/api/v1")
+            or ""
+        )
+        self.model_name: str = (
+            model_name
+            or os.getenv("LLM_MODEL", "google/gemini-2.0-flash-001")
+            or ""
+        )
         self._api_keys = self._load_api_keys()
         self._key_index = 0
         self.client = self._make_client()
 
     def _load_api_keys(self) -> list[str]:
-        """Load all available API keys. Supports LLM_API_KEY, LLM_API_KEY_1, LLM_API_KEY_2, ..."""
+        """Load API keys (LLM_API_KEY, LLM_API_KEY_1, LLM_API_KEY_2...)."""
         keys: list[str] = []
         primary = os.getenv("LLM_API_KEY", "")
         if primary:
@@ -49,7 +58,12 @@ class Model:
         return AsyncOpenAI(
             api_key=key,
             base_url=self.base_url,
-            timeout=httpx.Timeout(connect=30.0, read=180.0, write=30.0, pool=30.0),
+            timeout=httpx.Timeout(
+                connect=30.0,
+                read=180.0,
+                write=30.0,
+                pool=30.0,
+            ),
         )
 
     def _rotate_key(self) -> None:

@@ -83,10 +83,14 @@ def main(
         ..., "--output", help="Path to the output JSON file"
     ),
     model_name: Optional[str] = typer.Option(
-        None, "--model-name", help="LLM model identifier (defaults to LLM_MODEL env)"
+        None,
+        "--model-name",
+        help="LLM model identifier (defaults to LLM_MODEL env)",
     ),
     provider_url: Optional[str] = typer.Option(
-        None, "--provider-url", help="LLM API base URL (defaults to LLM_BASE_URL env)"
+        None,
+        "--provider-url",
+        help="LLM API base URL (defaults to LLM_BASE_URL env)",
     ),
 ) -> None:
     """Run the SWE-bench agent on a single task."""

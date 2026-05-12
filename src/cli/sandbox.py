@@ -216,7 +216,9 @@ def main(argv: Optional[list[str]] = None) -> None:
     args = _parse_args(argv)
 
     try:
-        config = SandboxConfig.load_config(args.config) if args.config else None
+        config = (
+            SandboxConfig.load_config(args.config) if args.config else None
+        )
     except Exception as e:
         print(f"Error loading sandbox config: {e}", file=sys.stderr)
         sys.exit(1)
@@ -274,13 +276,19 @@ def main(argv: Optional[list[str]] = None) -> None:
             try:
                 containerizer.up()
                 try:
-                    mcp_client = LocalToolsClient(module, containerizer=containerizer)
+                    mcp_client = LocalToolsClient(
+                        module,
+                        containerizer=containerizer,
+                    )
                     sandbox = Sandbox(config=config, mcp_client=mcp_client)
                     _run_interactive(sandbox)
                 finally:
                     containerizer.down()
             except Exception as e:
-                print(f"Error in containerizer or sandbox execution: {e}", file=sys.stderr)
+                print(
+                    f"Error in containerizer or sandbox execution: {e}",
+                    file=sys.stderr,
+                )
                 sys.exit(1)
             return
 
