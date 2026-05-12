@@ -1,4 +1,5 @@
 import multiprocessing
+import signal
 import time
 from typing import Any, Dict, TYPE_CHECKING
 
@@ -60,7 +61,21 @@ class SandboxSession:
                 exit_code=self._process.exitcode,
             )
 
-        self._control_parent.send({"type": "exec", "code": code})
+        try:
+            self._control_parent.send({"type": "exec", "code": code})
+        except (BrokenPipeError, EOFError):
+            if self._process.exitcode == -signal.SIGINT:
+                raise KeyboardInterrupt()
+            if self._process.exitcode == -signal.SIGTERM:
+                raise SystemExit()
+            return SandboxResult(
+                stdout="",
+                stderr="",
+                error="Sandbox session is not running",
+                final_answer=None,
+                timed_out=False,
+                exit_code=self._process.exitcode,
+            )
         start_time = time.monotonic()
         timed_out = False
 
@@ -73,6 +88,10 @@ class SandboxSession:
                 try:
                     message = self._tool_parent.recv()
                 except EOFError:
+                    if self._process.exitcode == -signal.SIGINT:
+                        raise KeyboardInterrupt()
+                    if self._process.exitcode == -signal.SIGTERM:
+                        raise SystemExit()
                     timed_out = True
                     self._process.terminate()
                     break
@@ -83,6 +102,10 @@ class SandboxSession:
                 try:
                     result_data = self._control_parent.recv()
                 except EOFError:
+                    if self._process.exitcode == -signal.SIGINT:
+                        raise KeyboardInterrupt()
+                    if self._process.exitcode == -signal.SIGTERM:
+                        raise SystemExit()
                     # Worker died (e.g. RLIMIT_CPU SIGXCPU, MemoryError on
                     # send, etc.) — treat as a timeout/OOM rather than crash.
                     timed_out = True

@@ -46,15 +46,27 @@ class Containerizer:
                 "first."
             )
 
-        Logger.debug(f"Starting container with image '{image}'...")
-        self.container = self.client.containers.run(
-            image=image,
-            command="/bin/bash",
-            tty=True,
-            detach=True
-        ) or None
+        Logger.info(f"Starting container with image '{image}'...")
+        try:
+            self.container = self.client.containers.run(
+                image=image,
+                command="/bin/bash",
+                tty=True,
+                detach=True
+            ) or None
+        except (KeyboardInterrupt, SystemExit):
+            Logger.info("Container start interrupted; skipping startup.")
+            if self.container is not None:
+                try:
+                    self.container.stop()
+                    self.container.remove()
+                except APIError as e:
+                    Logger.error(f"Docker API Error during cleanup: {e}")
+                finally:
+                    self.container = None
+            return
         if self.container is not None:
-            Logger.debug(
+            Logger.info(
                 f"Container {self.container.short_id} started successfully."
             )
 
@@ -70,17 +82,19 @@ class Containerizer:
             Logger.error("No container is currently running.")
             return
 
-        Logger.debug(
+        Logger.info(
             f"Stopping and removing container {self.container.short_id}..."
         )
         try:
             self.container.stop()
             self.container.remove()
+        except (KeyboardInterrupt, SystemExit):
+            Logger.info("Container cleanup interrupted; skipping shutdown.")
         except APIError as e:
             Logger.error(f"Docker API Error during cleanup: {e}")
         finally:
             self.container = None
-            Logger.debug("Container cleaned up.")
+            Logger.info("Container cleaned up.")
 
     def cmd(self, command: str) -> dict[str, Any]:
         """Executes a command inside the running container.

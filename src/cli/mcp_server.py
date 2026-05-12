@@ -1,3 +1,4 @@
+import sys
 from typing import Literal, Optional
 
 import typer
@@ -44,10 +45,16 @@ def main(
         protocol = "streamable-http"
     else:
         protocol = "stdio"
-    run_server(
-        transport=protocol,
-        host=host,
-        port=port,
-        http_path=http_path,
-        tools_module=tools_module,
-    )
+    try:
+        run_server(
+            transport=protocol,
+            host=host,
+            port=port,
+            http_path=http_path,
+            tools_module=tools_module,
+        )
+    except KeyboardInterrupt:
+        pass
+    except Exception as e:
+        print(f"Error running MCP server: {e}", file=sys.stderr)
+        sys.exit(1)

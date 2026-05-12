@@ -494,233 +494,241 @@ class AgenticLoop:
             if task.repo:
                 task_str += f"\n\nRepository: {task.repo} (mounted at /testbed)"
 
-        for iteration in range(self.max_iterations):
-            result.iterations = iteration + 1
-            Logger.info(
-                f"=== Iteration {iteration + 1}/{self.max_iterations} ==="
-            )
-
-            if result.total_input_tokens >= max_input:
-                Logger.warning("Input token limit reached, stopping")
-                result.error_message = "Input token limit reached"
-                break
-            if result.total_output_tokens >= max_output:
-                Logger.warning("Output token limit reached, stopping")
-                result.error_message = "Output token limit reached"
-                break
-
-            context_parts = [task_str]
-            if history:
-                context_parts.append("\nPrevious steps:")
-                for i, entry in enumerate(history[-5:], 1):
-                    thought = entry.get("thought", "")
-                    if thought:
-                        context_parts.append(f"\nStep {i} thought:\n{thought}")
-                    context_parts.append(
-                        f"Step {i} code:\n{entry.get('code', '')}"
-                    )
-                    obs = entry.get("observation", "")
-                    if obs:
-                        context_parts.append(f"Observation:\n{obs}")
-
-            if history and not history[-1].get("code"):
-                context_parts.append("\nIMPORTANT: Your previous response did not contain a valid Python code block. "
-                                     "You MUST provide your next action as a Python code block using the tools available. "
-                                     "Do NOT include your 'Thought:' or any conversational text inside the code block. "
-                                     "Your response must contain EXACTLY ONE code block (```python ... ```). "
-                                     "If you are stuck or your previous action failed, try a DIFFERENT approach.")
-            
-            context_message = "\n".join(context_parts)
-
-            Logger.info("Calling LLM...")
-            try:
-                llm_response = await self.model.get_next_step(
-                    context_message,
-                    system_prompt=system_prompt,
+        try:
+            for iteration in range(self.max_iterations):
+                result.iterations = iteration + 1
+                Logger.info(
+                    f"=== Iteration {iteration + 1}/{self.max_iterations} ==="
                 )
-            except Exception as e:
-                Logger.error(f"LLM call failed: {e}")
-                result.error_message = f"LLM call failed: {e}"
-                break
 
-            result.total_input_tokens += llm_response.input_tokens
-            result.total_output_tokens += llm_response.output_tokens
-            result.total_requests += 1
-
-            code = self._extract_code(llm_response)
-
-            if not code:
-                Logger.warning("No code block in LLM response")
-                obs = self._build_observation(
-                    sandbox_stdout="",
-                    sandbox_stderr="",
-                    sandbox_error=None,
-                    timed_out=False,
-                    no_code_found=True,
-                )
-                result.steps.append(
-                    self._make_step(iteration, llm_response, "", obs)
-                )
-                history.append({
-                    "thought": llm_response.thought,
-                    "code": None,
-                    "observation": obs,
-                })
-                continue
-
-            Logger.info(f"Code:\n{self._boxed_text(code)}")
-            result.final_code = code
-
-            normalized = " ".join(code.split())
-            mutates_state = any(
-                tok in normalized
-                for tok in (
-                    "edit_file(",
-                    "run_tests(",
-                    "run_command(",
-                    "final_answer(",
-                )
-            )
-            if mutates_state:
-                exec_cache.clear()
-
-            cached = exec_cache.get(normalized)
-            if cached is not None:
-                prev_obs, prev_count = cached
-                new_count = prev_count + 1
-                exec_cache[normalized] = (prev_obs, new_count)
-                Logger.warning(
-                    f"Cache hit: identical call run {new_count} times, "
-                    f"skipping sandbox and reusing previous result"
-                )
-                if new_count >= 3:
-                    obs = (
-                        f"[SYSTEM] You ran this exact code {new_count} "
-                        f"times. The result is deterministic — re-calling "
-                        f"is wasted compute. "
-                        f"You MUST change your strategy or parameters."
-                    )
-                    Logger.warning(f"Forcing strategy change after {new_count} repetitions")
-                else:
-                    obs = (
-                        f"[SYSTEM] Duplicate call — you already ran this exact "
-                        f"code {prev_count} time(s). Returning the previous "
-                        f"observation as-is (no re-execution). "
-                        f"IMPORTANT: Repeating the same call will NOT change the result. "
-                        f"Use this result and try a DIFFERENT action or change your approach.\n\n"
-                        f"Previous observation:\n{prev_obs}"
-                    )
-                result.steps.append(
-                    self._make_step(iteration, llm_response, code, obs)
-                )
-                history.append({
-                    "thought": llm_response.thought,
-                    "code": code,
-                    "observation": obs,
-                })
-                continue
-
-            try:
-                sandbox_result = self.sandbox.execute(code)
-            except Exception as e:
-                Logger.error(f"Sandbox execution error: {e}")
-                obs = f"[SYSTEM] Sandbox error: {e}"
-                result.steps.append(
-                    self._make_step(iteration, llm_response, code, obs)
-                )
-                history.append({
-                    "thought": llm_response.thought,
-                    "code": code,
-                    "observation": obs,
-                })
-                continue
-
-            # Run canonical MBPP tests to verify correctness independently
-            tests_error: Optional[str] = None
-            tests_stderr: str = ""
-            tests_timed_out: bool = False
-            canonical_tests_ran: bool = False
-            tests_passed_flag: Optional[bool] = None
-
-            if not sandbox_result.error:
-                normalized = " ".join(code.split())
-                exec_cache[normalized] = (sandbox_result.stdout + sandbox_result.stderr, 1)
-
-            if is_mbpp and not sandbox_result.error:
-                assert isinstance(task, MBPPTaskInput)
-                # Prefer the final_answer string as code to test (cleaner),
-                # fall back to stripping asserts from the sandbox code block.
-                code_to_test = (
-                    sandbox_result.final_answer
-                    if sandbox_result.final_answer is not None
-                    else self._strip_assert_lines(code)
-                )
-                test_code = self._build_mbpp_test_code(task, code_to_test)
-                Logger.info("Running canonical MBPP tests...")
-                tests_result = self.sandbox.execute(test_code)
-                tests_stderr = tests_result.stderr
-                tests_error = tests_result.error
-                tests_timed_out = tests_result.timed_out
-                canonical_tests_ran = True
-                # Tests pass when there is no exception and no timeout.
-                # Stderr may contain harmless warnings — do NOT fail on it.
-                tests_passed_val = not tests_error and not tests_timed_out
-                tests_passed_flag = tests_passed_val
-                if tests_error:
-                    Logger.warning(f"Canonical tests failed: {tests_error}")
-                else:
-                    Logger.info("Canonical tests passed")
-
-            obs = self._build_observation(
-                sandbox_stdout=sandbox_result.stdout,
-                sandbox_stderr=sandbox_result.stderr,
-                sandbox_error=sandbox_result.error,
-                timed_out=sandbox_result.timed_out,
-                tests_error=tests_error,
-                tests_stderr=tests_stderr,
-                tests_timed_out=tests_timed_out,
-                tests_passed=tests_passed_flag if canonical_tests_ran else None,
-            )
-
-            result.steps.append(
-                self._make_step(iteration, llm_response, code, obs)
-            )
-            history.append({
-                "thought": llm_response.thought,
-                "code": code,
-                "observation": obs,
-            })
-            if not mutates_state:
-                exec_cache[normalized] = (obs, 1)
-
-            canonical_ok = (
-                canonical_tests_ran
-                and tests_passed_flag is True
-            )
-
-            if sandbox_result.final_answer is not None:
-                if not is_mbpp or canonical_ok:
-                    result.final_answer = sandbox_result.final_answer
-                    result.success = True
-                    Logger.info(
-                        f"Task solved in {iteration + 1} iterations"
-                    )
+                if result.total_input_tokens >= max_input:
+                    Logger.warning("Input token limit reached, stopping")
+                    result.error_message = "Input token limit reached"
                     break
-                else:
-                    Logger.warning(
-                        "final_answer called but canonical tests failed; continuing"
+                if result.total_output_tokens >= max_output:
+                    Logger.warning("Output token limit reached, stopping")
+                    result.error_message = "Output token limit reached"
+                    break
+
+                context_parts = [task_str]
+                if history:
+                    context_parts.append("\nPrevious steps:")
+                    for i, entry in enumerate(history[-5:], 1):
+                        thought = entry.get("thought", "")
+                        if thought:
+                            context_parts.append(f"\nStep {i} thought:\n{thought}")
+                        context_parts.append(
+                            f"Step {i} code:\n{entry.get('code', '')}"
+                        )
+                        obs = entry.get("observation", "")
+                        if obs:
+                            context_parts.append(f"Observation:\n{obs}")
+
+                if history and not history[-1].get("code"):
+                    context_parts.append("\nIMPORTANT: Your previous response did not contain a valid Python code block. "
+                                         "You MUST provide your next action as a Python code block using the tools available. "
+                                         "Do NOT include your 'Thought:' or any conversational text inside the code block. "
+                                         "Your response must contain EXACTLY ONE code block (```python ... ```). "
+                                         "If you are stuck or your previous action failed, try a DIFFERENT approach.")
+                
+                context_message = "\n".join(context_parts)
+
+                Logger.info("Calling LLM...")
+                try:
+                    llm_response = await self.model.get_next_step(
+                        context_message,
+                        system_prompt=system_prompt,
                     )
+                except Exception as e:
+                    Logger.error(f"LLM call failed: {e}")
+                    result.error_message = f"LLM call failed: {e}"
+                    break
+
+                result.total_input_tokens += llm_response.input_tokens
+                result.total_output_tokens += llm_response.output_tokens
+                result.total_requests += 1
+
+                code = self._extract_code(llm_response)
+
+                if not code:
+                    Logger.warning("No code block in LLM response")
+                    obs = self._build_observation(
+                        sandbox_stdout="",
+                        sandbox_stderr="",
+                        sandbox_error=None,
+                        timed_out=False,
+                        no_code_found=True,
+                    )
+                    result.steps.append(
+                        self._make_step(iteration, llm_response, "", obs)
+                    )
+                    history.append({
+                        "thought": llm_response.thought,
+                        "code": None,
+                        "observation": obs,
+                    })
                     continue
 
-            # Auto-succeed when canonical tests pass (no explicit final_answer needed)
-            if is_mbpp and canonical_ok:
-                Logger.info(
-                    "Canonical tests passed; extracting final answer from code"
+                Logger.info(f"Code:\n{self._boxed_text(code)}")
+                result.final_code = code
+
+                normalized = " ".join(code.split())
+                mutates_state = any(
+                    tok in normalized
+                    for tok in (
+                        "edit_file(",
+                        "run_tests(",
+                        "run_command(",
+                        "final_answer(",
+                    )
                 )
-                code_to_test = self._strip_assert_lines(code)
-                result.final_answer = code_to_test
-                result.success = True
-                break
+                if mutates_state:
+                    exec_cache.clear()
+
+                cached = exec_cache.get(normalized)
+                if cached is not None:
+                    prev_obs, prev_count = cached
+                    new_count = prev_count + 1
+                    exec_cache[normalized] = (prev_obs, new_count)
+                    Logger.warning(
+                        f"Cache hit: identical call run {new_count} times, "
+                        f"skipping sandbox and reusing previous result"
+                    )
+                    if new_count >= 3:
+                        obs = (
+                            f"[SYSTEM] You ran this exact code {new_count} "
+                            f"times. The result is deterministic — re-calling "
+                            f"is wasted compute. "
+                            f"You MUST change your strategy or parameters."
+                        )
+                        Logger.warning(f"Forcing strategy change after {new_count} repetitions")
+                    else:
+                        obs = (
+                            f"[SYSTEM] Duplicate call — you already ran this exact "
+                            f"code {prev_count} time(s). Returning the previous "
+                            f"observation as-is (no re-execution). "
+                            f"IMPORTANT: Repeating the same call will NOT change the result. "
+                            f"Use this result and try a DIFFERENT action or change your approach.\n\n"
+                            f"Previous observation:\n{prev_obs}"
+                        )
+                    result.steps.append(
+                        self._make_step(iteration, llm_response, code, obs)
+                    )
+                    history.append({
+                        "thought": llm_response.thought,
+                        "code": code,
+                        "observation": obs,
+                    })
+                    continue
+
+                try:
+                    sandbox_result = self.sandbox.execute(code)
+                except (KeyboardInterrupt, SystemExit):
+                    raise
+                except Exception as e:
+                    Logger.error(f"Sandbox execution error: {e}")
+                    obs = f"[SYSTEM] Sandbox error: {e}"
+                    result.steps.append(
+                        self._make_step(iteration, llm_response, code, obs)
+                    )
+                    history.append({
+                        "thought": llm_response.thought,
+                        "code": code,
+                        "observation": obs,
+                    })
+                    continue
+
+                # Run canonical MBPP tests to verify correctness independently
+                tests_error: Optional[str] = None
+                tests_stderr: str = ""
+                tests_timed_out: bool = False
+                canonical_tests_ran: bool = False
+                tests_passed_flag: Optional[bool] = None
+
+                if not sandbox_result.error:
+                    normalized = " ".join(code.split())
+                    exec_cache[normalized] = (sandbox_result.stdout + sandbox_result.stderr, 1)
+
+                if is_mbpp and not sandbox_result.error:
+                    assert isinstance(task, MBPPTaskInput)
+                    # Prefer the final_answer string as code to test (cleaner),
+                    # fall back to stripping asserts from the sandbox code block.
+                    code_to_test = (
+                        sandbox_result.final_answer
+                        if sandbox_result.final_answer is not None
+                        else self._strip_assert_lines(code)
+                    )
+                    test_code = self._build_mbpp_test_code(task, code_to_test)
+                    Logger.info("Running canonical MBPP tests...")
+                    tests_result = self.sandbox.execute(test_code)
+                    tests_stderr = tests_result.stderr
+                    tests_error = tests_result.error
+                    tests_timed_out = tests_result.timed_out
+                    canonical_tests_ran = True
+                    # Tests pass when there is no exception and no timeout.
+                    # Stderr may contain harmless warnings — do NOT fail on it.
+                    tests_passed_val = not tests_error and not tests_timed_out
+                    tests_passed_flag = tests_passed_val
+                    if tests_error:
+                        Logger.warning(f"Canonical tests failed: {tests_error}")
+                    else:
+                        Logger.info("Canonical tests passed")
+
+                obs = self._build_observation(
+                    sandbox_stdout=sandbox_result.stdout,
+                    sandbox_stderr=sandbox_result.stderr,
+                    sandbox_error=sandbox_result.error,
+                    timed_out=sandbox_result.timed_out,
+                    tests_error=tests_error,
+                    tests_stderr=tests_stderr,
+                    tests_timed_out=tests_timed_out,
+                    tests_passed=tests_passed_flag if canonical_tests_ran else None,
+                )
+
+                result.steps.append(
+                    self._make_step(iteration, llm_response, code, obs)
+                )
+                history.append({
+                    "thought": llm_response.thought,
+                    "code": code,
+                    "observation": obs,
+                })
+                if not mutates_state:
+                    exec_cache[normalized] = (obs, 1)
+
+                canonical_ok = (
+                    canonical_tests_ran
+                    and tests_passed_flag is True
+                )
+
+                if sandbox_result.final_answer is not None:
+                    if not is_mbpp or canonical_ok:
+                        result.final_answer = sandbox_result.final_answer
+                        result.success = True
+                        Logger.info(
+                            f"Task solved in {iteration + 1} iterations"
+                        )
+                        break
+                    else:
+                        Logger.warning(
+                            "final_answer called but canonical tests failed; continuing"
+                        )
+                        continue
+
+                # Auto-succeed when canonical tests pass (no explicit final_answer needed)
+                if is_mbpp and canonical_ok:
+                    Logger.info(
+                        "Canonical tests passed; extracting final answer from code"
+                    )
+                    code_to_test = self._strip_assert_lines(code)
+                    result.final_answer = code_to_test
+                    result.success = True
+                    break
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except Exception as e:
+            Logger.error(f"Unexpected error in AgenticLoop.run: {e}")
+            result.error_message = f"Unexpected error: {e}"
 
         if not result.success and not result.error_message:
             result.error_message = (

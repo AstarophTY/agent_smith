@@ -1,18 +1,18 @@
+from __future__ import annotations
+
 import asyncio
 import json
 import os
 import sys
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 import typer
 from dotenv import load_dotenv
 
-from agenticloop.classes.AgenticLoop import AgenticLoop, AgenticLoopResult
-from cli.sandbox import load_tools_module
-from logger.classes.Logger import Logger
-from models.SWEBenchTaskInput import SWEBenchTaskInput
-from models.SolutionOutput import SolutionOutput
-from models.StepMetrics import StepMetrics
+if TYPE_CHECKING:
+    from agenticloop.classes.AgenticLoop import AgenticLoopResult
+    from models.SWEBenchTaskInput import SWEBenchTaskInput
+    from models.SolutionOutput import SolutionOutput
 
 app = typer.Typer()
 
@@ -21,6 +21,9 @@ def _build_solution(
     task: SWEBenchTaskInput,
     result: AgenticLoopResult,
 ) -> SolutionOutput:
+    from models.SolutionOutput import SolutionOutput
+    from models.StepMetrics import StepMetrics
+
     steps = [
         StepMetrics(
             step=s.step,
@@ -58,6 +61,9 @@ async def _run(
     model_name: Optional[str],
     provider_url: Optional[str],
 ) -> AgenticLoopResult:
+    from agenticloop.classes.AgenticLoop import AgenticLoop
+    from cli.sandbox import load_tools_module
+
     async with AgenticLoop(
         max_iterations=30,
         tool_module=load_tools_module("mcp_tools_swebench.py"),
@@ -86,8 +92,15 @@ def main(
     """Run the SWE-bench agent on a single task."""
     load_dotenv()
 
-    with open(task_file, "r", encoding="utf-8") as fh:
-        task = SWEBenchTaskInput.model_validate(json.load(fh))
+    from logger.classes.Logger import Logger
+    from models.SWEBenchTaskInput import SWEBenchTaskInput
+
+    try:
+        with open(task_file, "r", encoding="utf-8") as fh:
+            task = SWEBenchTaskInput.model_validate(json.load(fh))
+    except Exception as e:
+        print(f"Error loading task file {task_file}: {e}", file=sys.stderr)
+        sys.exit(1)
 
     try:
         Logger.setup("swebench", task.instance_id)
@@ -109,20 +122,29 @@ def main(
 
     try:
         result = asyncio.run(_run(task, model_name, provider_url))
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, SystemExit):
         print("Interrupted", file=sys.stderr)
         sys.exit(1)
+    except Exception as e:
+        Logger.error(f"Error running SWE-bench agent: {e}")
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
-    solution = _build_solution(task, result)
+    try:
+        solution = _build_solution(task, result)
 
-    with open(output, "w", encoding="utf-8") as fh:
-        fh.write(solution.model_dump_json(indent=2))
-        fh.write("\n")
+        with open(output, "w", encoding="utf-8") as fh:
+            fh.write(solution.model_dump_json(indent=2))
+            fh.write("\n")
 
-    status = "SUCCESS" if solution.success else "FAILED"
-    Logger.info(
-        f"Task {task.instance_id} {status} — "
-        f"{solution.iterations} iters, "
-        f"{solution.total_input_tokens} in / "
-        f"{solution.total_output_tokens} out tokens"
-    )
+        status = "SUCCESS" if solution.success else "FAILED"
+        Logger.info(
+            f"Task {task.instance_id} {status} — "
+            f"{solution.iterations} iters, "
+            f"{solution.total_input_tokens} in / "
+            f"{solution.total_output_tokens} out tokens"
+        )
+    except Exception as e:
+        Logger.error(f"Error saving solution: {e}")
+        print(f"Error saving solution: {e}", file=sys.stderr)
+        sys.exit(1)
