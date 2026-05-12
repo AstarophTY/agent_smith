@@ -6,6 +6,7 @@ from typing import List, Optional
 from dotenv import load_dotenv
 import httpx
 from openai import AsyncOpenAI, RateLimitError, APITimeoutError, APIConnectionError
+from openai.types.chat import ChatCompletionMessageParam
 from pydantic import BaseModel
 
 from logger.classes.Logger import Logger
@@ -28,12 +29,12 @@ class Model:
         base_url: Optional[str] = None,
     ):
         load_dotenv()
-        self.base_url = base_url or os.getenv(
+        self.base_url: str = base_url or os.getenv(
             "LLM_BASE_URL", "https://openrouter.ai/api/v1"
-        )
-        self.model_name = model_name or os.getenv(
+        ) or ""
+        self.model_name: str = model_name or os.getenv(
             "LLM_MODEL", "google/gemini-2.0-flash-001"
-        )
+        ) or ""
         self._api_keys = self._load_api_keys()
         self._key_index = 0
         self.client = self._make_client()
@@ -71,14 +72,15 @@ class Model:
     async def get_next_step(
         self,
         prompt: str,
-        history: List[dict] = [],
+        history: Optional[List[ChatCompletionMessageParam]] = None,
         system_prompt: str = "",
         max_retries: int = 5,
     ) -> LLMResponse:
-        messages: List[dict] = []
+        messages: List[ChatCompletionMessageParam] = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
-        messages.extend(history)
+        if history:
+            messages.extend(history)
         messages.append({"role": "user", "content": prompt})
 
         retries = 0

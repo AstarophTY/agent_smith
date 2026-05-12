@@ -1,7 +1,7 @@
 import ast
 import shlex
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 
 Symbol = dict[str, Any]
@@ -28,7 +28,8 @@ class McpToolsSweBench:
         if not self.containerizer:
             raise RuntimeError("Containerizer is not initialized.")
         full_command = f"cd {shlex.quote(workdir)} && {command}"
-        return self.containerizer.cmd(full_command)
+        result = self.containerizer.cmd(full_command)
+        return cast(dict[str, Any], result)
 
     def read_file(
         self, filepath: str, start_line: int, end_line: int
@@ -146,7 +147,8 @@ class McpToolsSweBench:
             cmd = f"find {shlex.quote(directory)} -type f"
 
         result = self.containerizer.cmd(cmd)
-        return result["stdout"].splitlines()
+        stdout = str(result.get("stdout", ""))
+        return stdout.splitlines()
 
     _SEARCH_EXCLUDE_DIRS = (
         ".git",
@@ -276,7 +278,7 @@ class McpToolsSweBench:
             "git -c core.fileMode=false diff HEAD"
             " --no-color --diff-algorithm=minimal"
         )
-        patch = result.get("stdout", "")
+        patch = str(result.get("stdout", ""))
         if not patch.strip():
             return "[INFO] No changes detected (empty patch)."
         return patch

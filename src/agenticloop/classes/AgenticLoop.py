@@ -50,7 +50,8 @@ Thought: <brief reasoning about the approach>
 <EXACTLY ONE code block containing your next action>
 ```
 
-CRITICAL: Your response MUST contain exactly one Python code block. Do NOT include any conversational text or "Thought:" inside the code block.
+CRITICAL: Your response MUST contain exactly one Python code block.
+Do NOT include any conversational text or "Thought:" inside the code block.
 
 NOTE: All tools automatically print their results. You don't need to use print() on tool calls.
 
@@ -129,7 +130,8 @@ Thought: <your reasoning about what to do next>
 <EXACTLY ONE code block containing your next action>
 ```
 
-CRITICAL: Your response MUST contain exactly one Python code block. Do NOT include any conversational text or "Thought:" inside the code block.
+CRITICAL: Your response MUST contain exactly one Python code block.
+Do NOT include any conversational text or "Thought:" inside the code block.
 
 NOTE: All tools automatically print their results. You don't need to use print() on tool calls.
 
@@ -193,6 +195,10 @@ class AgenticLoop:
         self.containerizer: Optional[Containerizer] = None
 
         if docker_image:
+            if tool_module is None:
+                raise ValueError(
+                    "tool_module is required when docker_image is set"
+                )
             self.containerizer = Containerizer()
             self.containerizer.up(docker_image)
             self.mcp_client = LocalToolsClient(
@@ -257,7 +263,7 @@ class AgenticLoop:
         if code:
             # Clean up the code block if the LLM included its thought process inside it
             lines = code.splitlines()
-            cleaned_lines = []
+            cleaned_lines: list[str] = []
             for line in lines:
                 stripped = line.strip()
                 # Skip empty lines at the beginning
@@ -266,11 +272,13 @@ class AgenticLoop:
                 # Skip conversational markers or thoughts leaking into code block
                 if stripped.startswith("Thought:"):
                     continue
-                if stripped.lower().startswith(("let me", "i will", "i'll", "i'm going to", "the fix is")):
+                if stripped.lower().startswith(
+                    ("let me", "i will", "i'll", "i'm going to", "the fix is")
+                ):
                     continue
-                
+
                 cleaned_lines.append(line)
-            
+
             # Remove trailing empty lines
             while cleaned_lines and not cleaned_lines[-1].strip():
                 cleaned_lines.pop()
@@ -525,12 +533,14 @@ class AgenticLoop:
                             context_parts.append(f"Observation:\n{obs}")
 
                 if history and not history[-1].get("code"):
-                    context_parts.append("\nIMPORTANT: Your previous response did not contain a valid Python code block. "
-                                         "You MUST provide your next action as a Python code block using the tools available. "
-                                         "Do NOT include your 'Thought:' or any conversational text inside the code block. "
-                                         "Your response must contain EXACTLY ONE code block (```python ... ```). "
-                                         "If you are stuck or your previous action failed, try a DIFFERENT approach.")
-                
+                    context_parts.append(
+                        "\nIMPORTANT: Your previous response did not contain a valid Python code block. "
+                        "You MUST provide your next action as a Python code block using the tools available. "
+                        "Do NOT include your 'Thought:' or any conversational text inside the code block. "
+                        "Your response must contain EXACTLY ONE code block (```python ... ```). "
+                        "If you are stuck or your previous action failed, try a DIFFERENT approach."
+                    )
+
                 context_message = "\n".join(context_parts)
 
                 Logger.info("Calling LLM...")
@@ -601,7 +611,9 @@ class AgenticLoop:
                             f"is wasted compute. "
                             f"You MUST change your strategy or parameters."
                         )
-                        Logger.warning(f"Forcing strategy change after {new_count} repetitions")
+                        Logger.warning(
+                            f"Forcing strategy change after {new_count} repetitions"
+                        )
                     else:
                         obs = (
                             f"[SYSTEM] Duplicate call — you already ran this exact "
