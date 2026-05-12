@@ -69,7 +69,8 @@ class McpToolsSweBench:
             return f"[ERROR] Could not read {filepath}: {result['stderr']}"
         lines = result["stdout"].splitlines(keepends=True)
         if not lines:
-            return f"[INFO] File {filepath} is empty or range {start_line}-{end_line} has no content."
+            return f"[INFO] File {filepath} is empty or range \
+                {start_line}-{end_line} has no content."
         return "".join(
             f"{line_number + start_line}: {line_content}"
             for line_number, line_content in enumerate(lines)
@@ -94,7 +95,8 @@ class McpToolsSweBench:
         read_cmd = f"cat {shlex.quote(filepath)}"
         result = self.containerizer.cmd(read_cmd)
         if result.get("exit_code", 0) != 0:
-            return f"[ERROR] Could not read {filepath}: {result.get('stderr', '')}"
+            return f"[ERROR] Could not read {filepath}: \
+                {result.get('stderr', '')}"
 
         content = result["stdout"]
         if old_str not in content:
@@ -202,13 +204,15 @@ class McpToolsSweBench:
 
         output = self.containerizer.cmd(grep_cmd)["stdout"]
         if not output.strip():
-            return f"[INFO] No matches found for pattern '{pattern}' in /testbed."
+            return f"[INFO] No matches found \
+                for pattern '{pattern}' in /testbed."
 
         lines = output.splitlines()
         if len(lines) > self._SEARCH_MAX_LINES:
             kept = "\n".join(lines[: self._SEARCH_MAX_LINES])
             return (
-                f"{kept}\n[INFO] Output truncated at {self._SEARCH_MAX_LINES} lines. "
+                f"{kept}\n[INFO] Output truncated \
+                    at {self._SEARCH_MAX_LINES} lines. "
                 "Refine the pattern or file_pattern for narrower results."
             )
         return "\n".join(lines)
@@ -230,13 +234,17 @@ class McpToolsSweBench:
         stderr = result.get("stderr", "") or ""
         combined = f"{stdout}\n{stderr}"
 
-        django_pass = re.search(r"Ran \d+ tests? in [\d.]+s\s*\nOK\b", combined)
-        django_fail = re.search(r"Ran \d+ tests? in [\d.]+s\s*\nFAILED", combined)
+        django_pass = re.search(
+            r"Ran \d+ tests? in [\d.]+s\s*\nOK\b", combined)
+        django_fail = re.search(
+            r"Ran \d+ tests? in [\d.]+s\s*\nFAILED", combined)
         pytest_pass = re.search(r"=+\s*\d+ passed.*in [\d.]+s", combined)
         pytest_fail = re.search(r"\d+ failed", combined)
         has_traceback = "Traceback (most recent call last)" in combined
-        placeholder_fail = re.search(r"^Test failed\s*$", combined, re.MULTILINE)
-        placeholder_pass = re.search(r"^Test passed\s*$", combined, re.MULTILINE)
+        placeholder_fail = re.search(
+            r"^Test failed\s*$", combined, re.MULTILINE)
+        placeholder_pass = re.search(
+            r"^Test passed\s*$", combined, re.MULTILINE)
 
         if django_fail or pytest_fail or placeholder_fail or has_traceback:
             passed = False
@@ -246,7 +254,8 @@ class McpToolsSweBench:
             reason = "test runner reported all passing"
         elif exit_code != 0:
             passed = False
-            reason = f"non-zero exit_code={exit_code} and no test summary found"
+            reason = f"non-zero exit_code={exit_code} \
+                and no test summary found"
         else:
             passed = False
             reason = "no Django/pytest summary found — cannot confirm success"
@@ -264,7 +273,8 @@ class McpToolsSweBench:
         """Retrieve the unified git diff of all changes in the repository.
 
         Produces a patch that can be passed directly to final_answer().
-        Use 'git -c core.fileMode=false diff HEAD' to get file-mode-agnostic diff.
+        Use 'git -c core.fileMode=false diff HEAD'
+            to get file-mode-agnostic diff.
 
         Returns:
             A string containing the unified diff (empty if no changes).
