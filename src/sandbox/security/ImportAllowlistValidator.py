@@ -80,7 +80,7 @@ class ImportAllowlistValidator(ast.NodeVisitor):
             self.local_names.add(node.args.kwarg.arg)
         for arg in node.args.kwonlyargs:
             self.local_names.add(arg.arg)
-            
+
         self.generic_visit(node)
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:

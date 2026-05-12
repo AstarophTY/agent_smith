@@ -16,8 +16,8 @@ clean:
 
 lint:
 	$(UV) run flake8 $(SRC_DIR) *.py
-	$(UV) run mypy $(SRC_DIR) $(MYPY_FLAG) *.py
+	$(UV) run mypy $(SRC_DIR) *.py $(MYPY_FLAG) 
 
 lint-strict:
 	$(UV) run flake8 $(SRC_DIR) *.py
-	$(UV) run mypy $(SRC_DIR) --strict *.py
+	$(UV) run mypy $(SRC_DIR) *.py --strict
