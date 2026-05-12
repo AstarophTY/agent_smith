@@ -3,6 +3,8 @@ from typing import Literal, Optional
 
 import typer
 
+from logger.classes.Logger import Logger
+
 from mcp_sys.MCPServer import run_server
 
 
@@ -45,6 +47,10 @@ def main(
         protocol = "streamable-http"
     else:
         protocol = "stdio"
+    try:
+        Logger.setup("mcp_server", f"{transport}-{host}-{port}")
+    except Exception:
+        pass
     try:
         run_server(
             transport=protocol,
