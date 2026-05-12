@@ -7,19 +7,9 @@ from dotenv import load_dotenv
 import httpx
 from openai import AsyncOpenAI, RateLimitError, APITimeoutError, APIConnectionError
 from openai.types.chat import ChatCompletionMessageParam
-from pydantic import BaseModel
 
+from agenticloop.classes.LLMResponse import LLMResponse
 from logger.classes.Logger import Logger
-
-
-class LLMResponse(BaseModel):
-    thought: str
-    code: Optional[str] = None
-    raw_content: str
-    input_tokens: int = 0
-    output_tokens: int = 0
-    retries: int = 0
-    request_time_ms: float = 0.0
 
 
 class Model:

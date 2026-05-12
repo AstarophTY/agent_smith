@@ -1,5 +1,6 @@
 """Agentic Loop module for autonomous problem-solving."""
-from agenticloop.classes.Model import Model, LLMResponse
+from agenticloop.classes.LLMResponse import LLMResponse
+from agenticloop.classes.Model import Model
 from agenticloop.classes.AgenticLoop import AgenticLoop, AgenticLoopResult
 
 __all__ = [

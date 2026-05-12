@@ -1,7 +1,7 @@
 from typing import Literal
 from fastmcp import FastMCP
 
-from mcp_sys.containerizer import Containerizer
+from mcp_sys.Containerizer import Containerizer
 
 
 class MCPServer:

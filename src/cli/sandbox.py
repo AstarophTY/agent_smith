@@ -8,7 +8,7 @@ from typing import Any, Callable, Dict, Optional
 from urllib.parse import urlparse
 
 from sandbox import Sandbox, SandboxConfig
-from mcp_sys.containerizer import Containerizer
+from mcp_sys.Containerizer import Containerizer
 
 
 def launch_mcp_server_subprocess(
