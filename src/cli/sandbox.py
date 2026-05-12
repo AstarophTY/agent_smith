@@ -8,7 +8,7 @@ from typing import Any, Callable, Dict, Optional
 from urllib.parse import urlparse
 
 from sandbox import Sandbox, SandboxConfig
-from mcp_sys.containerizer import Containerizer
+from mcp_sys.Containerizer import Containerizer
 
 
 def launch_mcp_server_subprocess(
@@ -210,59 +210,95 @@ def _run_interactive(sandbox: Sandbox) -> None:
                 print(f"Final answer: {result.final_answer}")
             continue
         buffer.append(line)
-    sandbox.close()
 
 
 def main(argv: Optional[list[str]] = None) -> None:
     args = _parse_args(argv)
 
-    config = SandboxConfig.load_config(args.config) if args.config else None
+    try:
+        config = (
+            SandboxConfig.load_config(args.config) if args.config else None
+        )
+    except Exception as e:
+        print(f"Error loading sandbox config: {e}", file=sys.stderr)
+        sys.exit(1)
+
     mcp_client = None
-    sandbox = Sandbox(config=config)
+    try:
+        sandbox = Sandbox(config=config)
+    except Exception as e:
+        print(f"Error initializing sandbox: {e}", file=sys.stderr)
+        sys.exit(1)
 
-    if not args.config and not args.mcp_stdio and not args.mcp_server:
-        _run_interactive(sandbox)
-        return
+    try:
+        if not args.config and not args.mcp_stdio and not args.mcp_server:
+            _run_interactive(sandbox)
+            return
 
-    if args.mcp_server:
-        parsed = urlparse(args.mcp_server)
-        host = parsed.hostname or "127.0.0.1"
-        port = parsed.port or 8000
-        launch_mcp_server_subprocess(
-            tools_module="mcp_tools_mbpp.py",
-            transport="http",
-            host=host,
-            port=port,
-        )
-        print("MCP server launched (HTTP mode)")
-        print(
-            "HTTP MCP client is not configured; sandbox will run without "
-            "remote tools."
-        )
-        _run_interactive(sandbox)
-        return
+        if args.mcp_server:
+            parsed = urlparse(args.mcp_server)
+            host = parsed.hostname or "127.0.0.1"
+            port = parsed.port or 8000
+            try:
+                launch_mcp_server_subprocess(
+                    tools_module="mcp_tools_mbpp.py",
+                    transport="http",
+                    host=host,
+                    port=port,
+                )
+            except Exception as e:
+                print(f"Error launching MCP server: {e}", file=sys.stderr)
+                sys.exit(1)
 
-    if args.mcp_stdio:
-        from logger.classes.Logger import Logger
+            print("MCP server launched (HTTP mode)")
+            print(
+                "HTTP MCP client is not configured; sandbox will run without "
+                "remote tools."
+            )
+            _run_interactive(sandbox)
+            return
+
+        if args.mcp_stdio:
+            from logger.classes.Logger import Logger
+            try:
+                Logger.setup("sandbox", "mcp-stdio")
+            except Exception:
+                pass
+
+            try:
+                tools_module = args.mcp_stdio.replace("python ", "").strip()
+                module = load_tools_module(tools_module)
+            except Exception as e:
+                print(f"Error loading tools module: {e}", file=sys.stderr)
+                sys.exit(1)
+
+            containerizer = Containerizer()
+            try:
+                containerizer.up()
+                try:
+                    mcp_client = LocalToolsClient(
+                        module,
+                        containerizer=containerizer,
+                    )
+                    sandbox = Sandbox(config=config, mcp_client=mcp_client)
+                    _run_interactive(sandbox)
+                finally:
+                    containerizer.down()
+            except Exception as e:
+                print(
+                    f"Error in containerizer or sandbox execution: {e}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            return
+
+        if args.config:
+            _run_interactive(sandbox)
+    finally:
         try:
-            Logger.setup("sandbox", "mcp-stdio")
+            sandbox.close()
         except Exception:
             pass
-
-        tools_module = args.mcp_stdio.replace("python ", "").strip()
-        module = load_tools_module(tools_module)
-        containerizer = Containerizer()
-        containerizer.up()
-        try:
-            mcp_client = LocalToolsClient(module, containerizer=containerizer)
-            sandbox = Sandbox(config=config, mcp_client=mcp_client)
-            _run_interactive(sandbox)
-        finally:
-            containerizer.down()
-        return
-
-    if args.config:
-        _run_interactive(sandbox)
 
 
 app = main

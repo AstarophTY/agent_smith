@@ -59,11 +59,12 @@ def _validate_swebench_patch(sb: InteractSweBench, instance_id: str, patch: str)
         return False
     try:
         # InteractSweBench.eval runs the SWE-bench evaluation script inside a Docker container
-        return sb.eval(
+        result = sb.eval(
             instance_id=instance_id,
             container_id=None,
             patch=patch,
         )
+        return result
     except Exception as e:
         print(f"Error validating solution: {e}")
         return False

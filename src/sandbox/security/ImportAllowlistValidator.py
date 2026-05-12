@@ -71,10 +71,16 @@ class ImportAllowlistValidator(ast.NodeVisitor):
             node (ast.FunctionDef): FunctionDef node.
         """
         self.local_names.add(node.name)
-        # Note: We don't visit the body to avoid nested name tracking for now,
-        # but we could if we wanted to be more thorough about local scopes.
-        # However, for flat scripts it's usually enough.
-        # If we visit the body, local variables inside the function will also be added to self.local_names.
+        # Visit arguments to track parameter names
+        for arg in node.args.args:
+            self.local_names.add(arg.arg)
+        if node.args.vararg:
+            self.local_names.add(node.args.vararg.arg)
+        if node.args.kwarg:
+            self.local_names.add(node.args.kwarg.arg)
+        for arg in node.args.kwonlyargs:
+            self.local_names.add(arg.arg)
+
         self.generic_visit(node)
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:
@@ -148,10 +154,15 @@ class ImportAllowlistValidator(ast.NodeVisitor):
         """
         func = node.func
         if isinstance(func, ast.Name):
-            if func.id not in self.allowed_calls and func.id not in self.local_names:
+            if (
+                func.id not in self.allowed_calls
+                and func.id not in self.local_names
+            ):
                 raise SecurityException(f"Call not allowed: {func.id}")
-        elif isinstance(func, ast.Attribute) \
-                and isinstance(func.value, ast.Name):
+        elif isinstance(func, ast.Attribute) and isinstance(
+            func.value,
+            ast.Name,
+        ):
             if (
                 func.value.id not in self.allowed_attribute_bases
                 and func.value.id not in self.local_names
@@ -161,11 +172,12 @@ class ImportAllowlistValidator(ast.NodeVisitor):
                 )
         else:
             # For complex calls like a().b() we might need more logic,
-            # but for now let's allow them if we can't statically determine they are bad,
-            # or keep it restricted.
+            # but for now let's allow them if we can't statically determine
+            # they are bad, or keep it restricted.
             # The previous implementation had:
             # raise SecurityException("Call not allowed")
-            # If it's not ast.Name or ast.Attribute with ast.Name, it's something like func()() or a.b.c()
+            # If it's not ast.Name or ast.Attribute with ast.Name, it's
+            # something like func()() or a.b.c()
             pass
         self.generic_visit(node)
 

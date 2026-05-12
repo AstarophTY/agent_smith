@@ -108,7 +108,10 @@ class SandboxWorker:
                 validator.allowed_calls.add(name)
 
         while True:
-            message = control_pipe.recv()
+            try:
+                message = control_pipe.recv()
+            except (KeyboardInterrupt, SystemExit):
+                break
             if message.get("type") == "close":
                 break
             if message.get("type") != "exec":
@@ -174,7 +177,7 @@ class SandboxWorker:
                     "timed_out": False,
                     "interrupt": exc.__class__.__name__,
                 })
-                raise
+                break
             except Exception as exc:
                 control_pipe.send({
                     "stdout": stdout_buffer.getvalue(),

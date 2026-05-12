@@ -220,3 +220,6 @@ __marimo__/
 # Custom
 evaluations
 cache
+
+.claude
+moulinette/task.json
