@@ -47,7 +47,7 @@ EXAM_POOL = SEED_POOL + [
 ]
 
 from swebench.harness.test_spec.test_spec import make_test_spec
-from swebench.harness.docker_utils import copy_to_container, exec_run_with_timeout
+from swebench.harness.docker_utils import exec_run_with_timeout
 from swebench.harness.constants import (
     DOCKER_PATCH,
     DOCKER_WORKDIR,
@@ -424,9 +424,28 @@ class InteractSweBench:
 
         # 3. Apply patch if provided
         if patch:
-            patch_file = Path("/tmp/patch.diff")
-            patch_file.write_text(patch)
-            copy_to_container(container, patch_file, Path(DOCKER_PATCH))
+            # Write patch directly to container using docker exec + tee
+            import subprocess
+            try:
+                process = subprocess.Popen(
+                    ["docker", "exec", "-i", container.id,
+                     "tee", DOCKER_PATCH],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+                stdout, stderr = process.communicate(
+                    input=patch.encode()
+                )
+                if process.returncode != 0:
+                    err_msg = stderr.decode('utf-8')
+                    print(
+                        f"Warning: Failed to write patch: "
+                        f"{err_msg}"
+                    )
+            except Exception as e:
+                print(f"Warning: Failed to write patch: {e}")
+
             # Try to apply patch
             GIT_APPLY_CMDS = [
                 "git apply --verbose",
@@ -441,20 +460,50 @@ class InteractSweBench:
                     user=DOCKER_USER,
                 )
                 if result.exit_code == 0:
-                    print(f"Patch applied successfully using: {git_apply_cmd}")
+                    print(
+                        f"Patch applied successfully using: "
+                        f"{git_apply_cmd}"
+                    )
                     applied = True
                     break
             if not applied:
-                print(f"Warning: Failed to apply patch. Output: {result.output.decode('utf-8')}")
+                output = result.output
+                if isinstance(output, bytes):
+                    output_str = output.decode('utf-8')
+                else:
+                    output_str = (
+                        b''.join(output).decode('utf-8')
+                    )
+                print(
+                    f"Error: Failed to apply patch. "
+                    f"Output: {output_str}"
+                )
+                return False
 
-        # 4. Copy script into container and execute
+        # 4. Write script and execute in container
         test_spec = self._get_test_spec(instance_id, dataset, split)
         try:
-            tmp = Path("/tmp/eval.sh")
-            tmp.write_text(eval_script)
-            copy_to_container(container, tmp, Path("/eval.sh"))
+            # Write eval script directly to container using
+            # docker exec + tee to avoid UID/GID issues
+            import subprocess
+            process = subprocess.Popen(
+                ["docker", "exec", "-i", str(container.id),
+                 "tee", "/eval.sh"],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            stdout, stderr = process.communicate(
+                input=eval_script.encode()
+            )
+            if process.returncode != 0:
+                err_msg = stderr.decode('utf-8')
+                print(f"Warning: Failed to write eval script: {err_msg}")
+            
             container.exec_run("chmod +x /eval.sh")
-            out, timed_out, runtime = exec_run_with_timeout(container, "/bin/bash /eval.sh", timeout)
+            out, timed_out, runtime = exec_run_with_timeout(
+                container, "/bin/bash /eval.sh", timeout
+            )
             print(out)
             print(f"Runtime: {runtime:.1f}s")
             if timed_out:
