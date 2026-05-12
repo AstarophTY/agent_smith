@@ -55,47 +55,14 @@ class Sandbox:
         allowed_calls = {
             # Base
             "print",
-            "input",
-            "len",
-            "range",
-            "enumerate",
-            "zip",
-            "map",
-            "filter",
-            "sorted",
-            "reversed",
-            "sum",
-            "min",
-            "max",
-            "abs",
-            "round",
-            "pow",
-            "divmod",
-            "all",
-            "any",
-
-            # Types / conversion
-            "str",
-            "int",
-            "float",
-            "bool",
-            "list",
-            "dict",
-            "set",
-            "tuple",
-
-            # Inspection
-            "type",
-            "isinstance",
-            "hasattr",
-            "getattr",
-            "setattr",
-            "callable",
 
             # Custom agent tools
             "final_answer",
             "generate_manual",
         }
+        # Add authorized calls from config
+        for call_name in self.config.authorized_calls:
+            allowed_calls.add(call_name)
         self._refresh_tools()
         for tool in self._tools:
             name = tool.get("name")

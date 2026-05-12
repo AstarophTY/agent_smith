@@ -15,9 +15,9 @@ clean:
 	find . -type f -name "*.py[co]" -delete
 
 lint:
-	$(UV) run flake8 $(SRC_DIR)
-	$(UV) run mypy $(SRC_DIR) $(MYPY_FLAG)
+	$(UV) run flake8 $(SRC_DIR) *.py
+	$(UV) run mypy $(SRC_DIR) $(MYPY_FLAG) *.py
 
 lint-strict:
-	$(UV) run flake8 $(SRC_DIR)
-	$(UV) run mypy $(SRC_DIR) --strict
+	$(UV) run flake8 $(SRC_DIR) *.py
+	$(UV) run mypy $(SRC_DIR) --strict *.py

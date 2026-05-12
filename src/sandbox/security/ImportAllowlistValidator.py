@@ -71,11 +71,16 @@ class ImportAllowlistValidator(ast.NodeVisitor):
             node (ast.FunctionDef): FunctionDef node.
         """
         self.local_names.add(node.name)
-        # Note: We don't visit the body to avoid nested name tracking for now,
-        # but we could if we wanted to be more thorough about local scopes.
-        # However, for flat scripts it's usually enough.
-        # If we visit the body, local variables inside the function will also
-        # be added to self.local_names.
+        # Visit arguments to track parameter names
+        for arg in node.args.args:
+            self.local_names.add(arg.arg)
+        if node.args.vararg:
+            self.local_names.add(node.args.vararg.arg)
+        if node.args.kwarg:
+            self.local_names.add(node.args.kwarg.arg)
+        for arg in node.args.kwonlyargs:
+            self.local_names.add(arg.arg)
+            
         self.generic_visit(node)
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:

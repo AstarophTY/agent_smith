@@ -1,1 +1,15 @@
-{}
+{
+  "authorized_imports": [
+    "math", "math.*", "collections", "collections.*", "itertools",
+    "re", "json", "typing", "typing.*", "functools", "operator",
+    "heapq", "bisect", "copy", "string", "random", "datetime",
+    "datetime.*", "array", "cmath"
+  ],
+  "authorized_calls": [
+    "input", "len", "range", "enumerate", "zip", "map", "filter",
+    "sorted", "reversed", "sum", "min", "max", "abs", "round",
+    "pow", "divmod", "all", "any", "str", "int", "float", "bool",
+    "list", "dict", "set", "tuple", "type", "isinstance", "hasattr",
+    "getattr", "setattr", "callable"
+  ]
+}

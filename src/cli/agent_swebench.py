@@ -60,9 +60,15 @@ async def _run(
     task: SWEBenchTaskInput,
     model_name: Optional[str],
     provider_url: Optional[str],
+    sandbox_config_path: Optional[str] = None,
 ) -> AgenticLoopResult:
     from agenticloop.classes.AgenticLoop import AgenticLoop
     from cli.sandbox import load_tools_module
+    from models import SandboxConfig
+
+    config = None
+    if sandbox_config_path and os.path.exists(sandbox_config_path):
+        config = SandboxConfig.load_config(sandbox_config_path)
 
     async with AgenticLoop(
         max_iterations=30,
@@ -70,6 +76,7 @@ async def _run(
         docker_image=task.docker_image,
         model_name=model_name,
         provider_url=provider_url,
+        sandbox_config=config,
     ) as loop:
         return await loop.run(task=task)
 
@@ -91,6 +98,11 @@ def main(
         None,
         "--provider-url",
         help="LLM API base URL (defaults to LLM_BASE_URL env)",
+    ),
+    sandbox_config: Optional[str] = typer.Option(
+        "sandbox_template.json",
+        "--sandbox-config",
+        help="Path to the sandbox config JSON file",
     ),
 ) -> None:
     """Run the SWE-bench agent on a single task."""
@@ -125,7 +137,9 @@ def main(
     os.environ["LLM_BASE_URL"] = provider_url
 
     try:
-        result = asyncio.run(_run(task, model_name, provider_url))
+        result = asyncio.run(
+            _run(task, model_name, provider_url, sandbox_config)
+        )
     except (KeyboardInterrupt, SystemExit):
         print("Interrupted", file=sys.stderr)
         sys.exit(1)

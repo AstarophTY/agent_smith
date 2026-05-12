@@ -6,12 +6,8 @@ from pydantic import BaseModel, Field
 
 class SandboxConfig(BaseModel):
     """Sandbox configuration for student solutions."""
-    authorized_imports: List[str] = Field(default_factory=lambda: [
-        "math", "math.*", "collections", "collections.*", "itertools",
-        "re", "json", "typing", "typing.*", "functools", "operator",
-        "heapq", "bisect", "copy", "string", "random", "datetime",
-        "datetime.*", "array", "cmath"
-    ])
+    authorized_imports: List[str] = Field(default_factory=list)
+    authorized_calls: List[str] = Field(default_factory=list)
     allowed_directories: List[str] = Field(default_factory=lambda: [
         "/testbed", "/tmp/agent"
     ])

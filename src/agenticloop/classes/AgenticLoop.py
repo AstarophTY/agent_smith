@@ -208,6 +208,15 @@ class AgenticLoop:
         if not Logger._initialized:
             Logger.setup("a", "b")
 
+        if sandbox_config is None:
+            import os
+            template_path = "sandbox_template.json"
+            if os.path.exists(template_path):
+                try:
+                    sandbox_config = SandboxConfig.load_config(template_path)
+                except Exception as e:
+                    Logger.error(f"Failed to load default sandbox config: {e}")
+
         self.max_iterations = max_iterations
         self.model = Model(model_name=model_name, base_url=provider_url)
         self.mcp_client: Optional[LocalToolsClient] = None
