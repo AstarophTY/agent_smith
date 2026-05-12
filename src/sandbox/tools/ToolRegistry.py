@@ -101,7 +101,9 @@ class ToolRegistry:
             response = tool_pipe.recv()
             if response.get("status") == "error":
                 raise RuntimeError(response.get("error", "Tool call failed"))
-            return response.get("result")
+            result = response.get("result")
+            print(result)
+            return result
 
         tool_function.__name__ = tool_name
         tool_function.__doc__ = f"Proxy for MCP tool '{tool_name}'."

@@ -165,12 +165,16 @@ class Model:
         import re
 
         code_match = re.search(r"```python\s+(.*?)\s*```", text, re.DOTALL)
-        if code_match:
-            Logger.debug("Found python code block in LLM response")
-        else:
-            Logger.debug("No python code block found in LLM response")
+        if not code_match:
+            code_match = re.search(r"```\s+(.*?)\s*```", text, re.DOTALL)
 
-        code = code_match.group(1).strip() if code_match else None
-        thought = re.sub(r"```python.*?```", "", text, flags=re.DOTALL).strip()
+        if code_match:
+            Logger.debug("Found code block in LLM response")
+            code = code_match.group(1).strip()
+            thought = text.replace(code_match.group(0), "").strip()
+        else:
+            Logger.debug("No code block found in LLM response")
+            code = None
+            thought = text.strip()
 
         return LLMResponse(thought=thought, code=code, raw_content=text)

@@ -31,6 +31,7 @@ Implement a Python function that passes all provided tests.
   - test_list: list of assert strings (e.g. ["assert f(1) == 2", "assert f(0) == 0"])
   - test_imports: list of extra import lines needed by the tests (e.g. ["import math"])
   Returns: {"stdout": str, "stderr": str, "exit_code": int, "success": bool}
+  (The result is also printed automatically).
   success=True means ALL assertions passed. stderr shows the traceback on failure.
 - final_answer(code): Submit solution and stop. Pass ONLY the function string.
 
@@ -46,8 +47,12 @@ Implement a Python function that passes all provided tests.
 Always respond with:
 Thought: <brief reasoning about the approach>
 ```python
-<code block — see pattern below>
+<EXACTLY ONE code block containing your next action>
 ```
+
+CRITICAL: Your response MUST contain exactly one Python code block. Do NOT include any conversational text or "Thought:" inside the code block.
+
+NOTE: All tools automatically print their results. You don't need to use print() on tool calls.
 
 ## Pattern to follow every iteration
 ```python
@@ -63,7 +68,6 @@ result = run_tests(
     ],
     test_imports=[],  # add imports here if the tests need them
 )
-print(result)
 if result["success"]:
     final_answer(code)
 else:
@@ -87,7 +91,6 @@ result = run_tests(
     test_list=["assert add(1, 2) == 3", "assert add(-1, 1) == 0"],
     test_imports=[],
 )
-print(result)
 if result["success"]:
     final_answer(code)
 else:
@@ -95,6 +98,7 @@ else:
 ```
 
 ## Rules
+- ALWAYS respond with a Python code block (```python ... ```) containing your next action
 - Use triple-quoted strings for multi-line functions in the code variable
 - ALWAYS call run_tests before final_answer — never submit without verifying
 - If the function needs imports (math, re, etc.), include them INSIDE the code string
@@ -122,12 +126,12 @@ You are Agent Smith, an autonomous software engineering agent fixing bugs in rea
 ## Response Format
 Thought: <your reasoning about what to do next>
 ```python
-result = tool_name(
-    param1="value1",
-    param2="value2",
-)
-print(result)
+<EXACTLY ONE code block containing your next action>
 ```
+
+CRITICAL: Your response MUST contain exactly one Python code block. Do NOT include any conversational text or "Thought:" inside the code block.
+
+NOTE: All tools automatically print their results. You don't need to use print() on tool calls.
 
 ## Interpreting run_tests()
 run_tests() returns: {{"stdout": str, "stderr": str, "exit_code": int, "passed": bool, "summary": str}}
@@ -139,11 +143,11 @@ run_tests() returns: {{"stdout": str, "stderr": str, "exit_code": int, "passed":
 ## Submitting the solution
 ```python
 patch = get_patch()
-print(patch)  # verify the patch looks correct
 final_answer(patch)
 ```
 
 ## Critical Rules
+- ALWAYS respond with a Python code block (```python ... ```) containing your next action
 - NEVER submit without running tests first (run_tests, check exit_code == 0)
 - Make targeted, minimal edits — do not refactor unrelated code
 - Do NOT access external URLs or look up PR/issue solutions
@@ -236,16 +240,45 @@ class AgenticLoop:
         return "\n".join(lines)
 
     def _extract_code(self, llm_response: LLMResponse) -> Optional[str]:
+        code = None
         if llm_response.code:
-            return llm_response.code
-        code_match = re.search(
-            r"```python\s+(.*?)\s*```",
-            llm_response.raw_content,
-            re.DOTALL,
-        )
-        if code_match:
-            return code_match.group(1).strip()
-        return self._xml_calls_to_python(llm_response.raw_content)
+            code = llm_response.code
+        else:
+            code_match = re.search(
+                r"```python\s+(.*?)\s*```",
+                llm_response.raw_content,
+                re.DOTALL,
+            )
+            if code_match:
+                code = code_match.group(1).strip()
+            else:
+                code = self._xml_calls_to_python(llm_response.raw_content)
+
+        if code:
+            # Clean up the code block if the LLM included its thought process inside it
+            lines = code.splitlines()
+            cleaned_lines = []
+            for line in lines:
+                stripped = line.strip()
+                # Skip empty lines at the beginning
+                if not cleaned_lines and not stripped:
+                    continue
+                # Skip conversational markers or thoughts leaking into code block
+                if stripped.startswith("Thought:"):
+                    continue
+                if stripped.lower().startswith(("let me", "i will", "i'll", "i'm going to", "the fix is")):
+                    continue
+                
+                cleaned_lines.append(line)
+            
+            # Remove trailing empty lines
+            while cleaned_lines and not cleaned_lines[-1].strip():
+                cleaned_lines.pop()
+
+            code = "\n".join(cleaned_lines).strip()
+            return code if code else None
+
+        return None
 
     def _xml_calls_to_python(self, text: str) -> Optional[str]:
         """Convert Mistral-style XML function calls into equivalent Python.
@@ -256,11 +289,11 @@ class AgenticLoop:
         Rather than dropping the response, we translate it.
         """
         func_pattern = re.compile(
-            r"<function=([\w_]+)>\s*(.*?)\s*</function>",
+            r"<function=([\w_]+)>\s*(.*?)\s*(?:</function>|$)",
             re.DOTALL,
         )
         param_pattern = re.compile(
-            r"<parameter=([\w_]+)>\s*(.*?)\s*</parameter>",
+            r"<parameter=([\w_]+)>\s*(.*?)\s*(?:</parameter>|$)",
             re.DOTALL,
         )
         lines: list[str] = []
@@ -268,6 +301,8 @@ class AgenticLoop:
             params: list[str] = []
             for key, value in param_pattern.findall(body):
                 value = value.strip()
+                if not value:
+                    continue
                 if re.fullmatch(r"-?\d+", value):
                     params.append(f"{key}={value}")
                 elif re.fullmatch(r"-?\d+\.\d+", value):
@@ -281,7 +316,6 @@ class AgenticLoop:
                 lines.append(f"{func_name}({args})")
             else:
                 lines.append(f"result = {func_name}({args})")
-                lines.append("print(result)")
         if not lines:
             return None
         return "\n".join(lines)
@@ -353,7 +387,8 @@ class AgenticLoop:
             return (
                 "[SYSTEM] No valid Python code block found in your response.\n"
                 "Please include your code inside ```python ... ``` markers.\n"
-                "Follow the response format exactly as shown in the instructions."
+                "Follow the response format exactly as shown in the instructions.\n"
+                "If you've already tried something that didn't work, try a different approach."
             )
 
         parts: list[str] = []
@@ -487,6 +522,14 @@ class AgenticLoop:
                     obs = entry.get("observation", "")
                     if obs:
                         context_parts.append(f"Observation:\n{obs}")
+
+            if history and not history[-1].get("code"):
+                context_parts.append("\nIMPORTANT: Your previous response did not contain a valid Python code block. "
+                                     "You MUST provide your next action as a Python code block using the tools available. "
+                                     "Do NOT include your 'Thought:' or any conversational text inside the code block. "
+                                     "Your response must contain EXACTLY ONE code block (```python ... ```). "
+                                     "If you are stuck or your previous action failed, try a DIFFERENT approach.")
+            
             context_message = "\n".join(context_parts)
 
             Logger.info("Calling LLM...")
@@ -554,27 +597,19 @@ class AgenticLoop:
                     obs = (
                         f"[SYSTEM] You ran this exact code {new_count} "
                         f"times. The result is deterministic — re-calling "
-                        f"is wasted compute. Stopping the agent."
+                        f"is wasted compute. "
+                        f"You MUST change your strategy or parameters."
                     )
-                    result.steps.append(
-                        self._make_step(iteration, llm_response, code, obs)
+                    Logger.warning(f"Forcing strategy change after {new_count} repetitions")
+                else:
+                    obs = (
+                        f"[SYSTEM] Duplicate call — you already ran this exact "
+                        f"code {prev_count} time(s). Returning the previous "
+                        f"observation as-is (no re-execution). "
+                        f"IMPORTANT: Repeating the same call will NOT change the result. "
+                        f"Use this result and try a DIFFERENT action or change your approach.\n\n"
+                        f"Previous observation:\n{prev_obs}"
                     )
-                    history.append({
-                        "thought": llm_response.thought,
-                        "code": code,
-                        "observation": obs,
-                    })
-                    result.error_message = (
-                        f"Loop detected: same call repeated {new_count} times"
-                    )
-                    break
-                obs = (
-                    f"[SYSTEM] Duplicate call — you already ran this exact "
-                    f"code {prev_count} time(s). Returning the previous "
-                    f"observation as-is (no re-execution). Use this result "
-                    f"and try a different action.\n\n"
-                    f"Previous observation:\n{prev_obs}"
-                )
                 result.steps.append(
                     self._make_step(iteration, llm_response, code, obs)
                 )
@@ -606,6 +641,10 @@ class AgenticLoop:
             tests_timed_out: bool = False
             canonical_tests_ran: bool = False
             tests_passed_flag: Optional[bool] = None
+
+            if not sandbox_result.error:
+                normalized = " ".join(code.split())
+                exec_cache[normalized] = (sandbox_result.stdout + sandbox_result.stderr, 1)
 
             if is_mbpp and not sandbox_result.error:
                 assert isinstance(task, MBPPTaskInput)
