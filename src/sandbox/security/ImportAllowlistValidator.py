@@ -4,6 +4,14 @@ from typing import Any, Iterable, Set
 
 from .SecurityException import SecurityException
 
+# Builtins that take an attribute name as their second argument.
+ATTRIBUTE_BUILTINS = {"getattr", "setattr", "hasattr", "delattr"}
+
+
+def is_dunder(name: str) -> bool:
+    """Return True for special names such as ``__class__``."""
+    return name.startswith("__") and name.endswith("__")
+
 
 class ImportAllowlistValidator(ast.NodeVisitor):
     """AST validator that enforces allowlists for imports and calls.
@@ -153,6 +161,8 @@ class ImportAllowlistValidator(ast.NodeVisitor):
             SecurityException: If a call is not allowed.
         """
         func = node.func
+        if isinstance(func, ast.Name) and func.id in ATTRIBUTE_BUILTINS:
+            self._check_attribute_name_argument(func.id, node)
         if isinstance(func, ast.Name):
             if (
                 func.id not in self.allowed_calls
@@ -180,6 +190,47 @@ class ImportAllowlistValidator(ast.NodeVisitor):
             # something like func()() or a.b.c()
             pass
         self.generic_visit(node)
+
+    def visit_Attribute(self, node: ast.Attribute) -> Any:
+        """Reject access to special attributes such as ``__class__``.
+
+        These attributes give access to the object graph
+        (``().__class__.__base__.__subclasses__()``) and are the classic way
+        out of a Python sandbox.
+
+        Args:
+            node (ast.Attribute): Attribute node.
+
+        Raises:
+            SecurityException: If the attribute is a dunder name.
+        """
+        if is_dunder(node.attr):
+            raise SecurityException(f"Attribute not allowed: {node.attr}")
+        self.generic_visit(node)
+
+    @staticmethod
+    def _check_attribute_name_argument(func_name: str, node: ast.Call) -> None:
+        """Require a literal, non-dunder name in getattr-like calls.
+
+        Args:
+            func_name (str): Name of the builtin being called.
+            node (ast.Call): Call node.
+
+        Raises:
+            SecurityException: If the name is dynamic or a dunder name.
+        """
+        if len(node.args) < 2:
+            return
+        name = node.args[1]
+        if not (
+            isinstance(name, ast.Constant) and isinstance(name.value, str)
+        ):
+            raise SecurityException(
+                f"{func_name}() needs a literal attribute name"
+            )
+        attribute = name.value
+        if is_dunder(attribute):
+            raise SecurityException(f"Attribute not allowed: {attribute}")
 
     @staticmethod
     def is_allowed_import(
