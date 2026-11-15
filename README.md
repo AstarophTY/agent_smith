@@ -11,6 +11,24 @@ two types of benchmarks:
 The agent runs a loop of LLM calls, sandboxed execution, and tool usage, then
 outputs a structured solution JSON artifact for evaluation.
 
+## Results
+
+SWE-bench tasks solved by the agent (full tables, per-step metrics and ablation study in
+[BENCHMARK.md](BENCHMARK.md)):
+
+| Model | Provider | django-11066 | scikit-learn-13439 | sympy-18189 | Solved |
+| --- | --- | :---: | :---: | :---: | :---: |
+| codestral-latest | Mistral | ✅ | ✅ | ❌ | **2/3** |
+| mistral-medium-latest | Mistral | ✅ | ✅ | ❌ | **2/3** |
+| DeepSeek-V3 | DeepInfra | ✅ | ✅ | ❌ | **2/3** |
+| mistral-small-latest | Mistral | ✅ | ❌ | ❌ | 1/3 |
+| llama-3.3-70b-versatile | Groq | ✅ | ❌ | ❌ | 1/3 |
+
+- **Selected model:** `codestral-latest`, solving 2 of 3 tasks with the fewest iterations (3 on Django, 9 on
+  scikit-learn).
+- **Ablation:** printing results by default and waiting when the token limit is reached turned two failures into
+  passes for `mistral-small-latest`.
+
 ## System Architecture
 High-level flow:
 
@@ -38,7 +56,9 @@ Loop state, caching, and per-step metrics are stored in the `AgenticLoopResult`.
 ## Sandbox Design
 The sandbox isolates execution in a persistent worker process and applies
 multiple safety layers:
-- AST validation: only allowlisted imports and call targets are permitted.
+- AST validation: only allowlisted imports and call targets are permitted, and
+	special attributes (`__class__`, `__globals__`…) are rejected, including through
+	`getattr`/`setattr`, to block object-graph escapes.
 - Restricted builtins: a curated subset of Python builtins is exposed.
 - Resource limits: CPU time and memory caps are enforced per execution.
 - Tool bridging: MCP tools are exposed via proxy functions over pipes.
@@ -86,6 +106,12 @@ via stdio or streamable HTTP.
 ### Quick install (Makefile)
 ```bash
 make install
+```
+
+### Tests and lint
+```bash
+uv run pytest   # sandbox security tests
+make lint       # flake8 + mypy
 ```
 
 ### Run the CLIs
